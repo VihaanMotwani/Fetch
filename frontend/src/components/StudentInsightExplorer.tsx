@@ -42,40 +42,21 @@ function gradeColor(grade: string) {
 
 async function fetchPeers(params: {
   studentName: string;
-  courseId?: string;
-  courseName?: string;
+  courseMode: "id" | "name";
+  course: string;      // courseId or courseName value
   minSim: number;
   grades: string[];
 }): Promise<Peer[]> {
-  if (USE_MOCK) {
-    // Simulate a small latency
-    await new Promise((r) => setTimeout(r, 400));
-    const pool: Peer[] = [
-      { id: "S-101", name: "Ava Patel", grade: "A", similarity: 0.93 },
-      { id: "S-202", name: "Diego Romero", grade: "A-", similarity: 0.89 },
-      { id: "S-303", name: "Mina Chen", grade: "B+", similarity: 0.86 },
-      { id: "S-404", name: "Samir Khan", grade: "A", similarity: 0.84 },
-      { id: "S-505", name: "Leah Brooks", grade: "B+", similarity: 0.81 },
-    ];
-    return pool
-      .filter((p) => p.similarity >= params.minSim)
-      .filter((p) => params.grades.includes(p.grade))
-      .sort((a, b) => b.similarity - a.similarity);
-  }
-
   const query = new URLSearchParams({
     name: params.studentName,
+    by: params.courseMode,
+    course: params.course,
     minSim: String(params.minSim),
     grades: params.grades.join(","),
-    ...(params.courseId ? { courseId: params.courseId } : {}),
-    ...(params.courseName ? { courseName: params.courseName } : {}),
   });
-  
   const res = await fetch(`/api/peers?${query.toString()}`);
   if (!res.ok) throw new Error("Failed to fetch peers");
-  const data = await res.json();
-  // Expecting: [{id, name, grade, similarity}]
-  return data as Peer[];
+  return (await res.json()) as Peer[];
 }
 
 // --- Component ---
@@ -114,8 +95,8 @@ export default function StudentInsightExplorer() {
     try {
       const data = await fetchPeers({
         studentName,
-        courseId: courseMode === "id" ? courseId : undefined,
-        courseName: courseMode === "name" ? courseName : undefined,
+        courseMode,
+        course: courseMode === "id" ? courseId : courseName,
         minSim,
         grades: selectedGrades,
       });

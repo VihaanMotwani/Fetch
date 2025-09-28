@@ -29,53 +29,49 @@ def _parse_grades(grades_csv: str) -> List[str]:
     return [g.strip() for g in grades_csv.split(",") if g.strip()]
 
 @app.get("/peers")
-def get_peers_by_course_id(
+def get_peers(
     name: str = Query(..., description="Student name (you)"),
-    courseId: str = Query(..., description="Course ID"),
-    minSim: float = Query(0.8, ge=0.0, le=1.0, description="Minimum similarity (0..1)"),
-    grades: str = Query("A,A-,B+", description="CSV of accepted grades"),
+    by: str = Query("id", pattern="^(id|name)$", description="How to interpret 'course'"),
+    course: str = Query(..., description="Course ID (by=id) or Course Name (by=name)"),
+    minSim: float = Query(0.8, ge=0.0, le=1.0),
+    grades: str = Query("A,A-,B+"),
 ):
-    """
-    Returns peers with similar learning styles who achieved successful grades in the course (by ID).
-    """
     drv = Neo4jDriver()
     try:
         drv.connect()
+
+        # Resolve course_id if needed
+        if by == "name":
+            course_id = find_course_id_from_name(drv, course_name=course)
+            if not course_id:
+                raise HTTPException(status_code=404, detail=f"Course not found: {course}")
+        else:
+            course_id = course
+
+        # Always use the ID-based finder
+        grade_list = _parse_grades(grades)
         recs = find_successful_peers_id(
-            name=name,
-            course_id=courseId,
-            neodriver=drv,
+            drv,
+            student_name=name,
+            course_id=course_id,
             min_similarity=minSim,
-            grades=_parse_grades(grades),
+            grades=grade_list,
         )
-        return [dict(r) for r in recs]
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        drv.close()
 
+        out = []
+        for r in recs:
+            row = r if isinstance(r, dict) else (getattr(r, "data", lambda: dict(r))())
+            pid  = row.get("id")  or row.get("peer.id")
+            pname= row.get("name") or row.get("peer.name")
+            grade= row.get("grade") or row.get("peerGrade.grade")
+            sim  = row.get("similarity") or row.get("sim.similarity") or 0.0
+            out.append({"id": pid, "name": pname, "grade": grade, "similarity": float(sim)})
 
-@app.get("/peers/by-name")
-def get_peers_by_course_name(
-    name: str = Query(..., description="Student name (you)"),
-    courseName: str = Query(..., description="Course name"),
-    minSim: float = Query(0.8, ge=0.0, le=1.0, description="Minimum similarity (0..1)"),
-    grades: str = Query("A,A-,B+", description="CSV of accepted grades"),
-):
-    """
-    Returns peers with similar learning styles who achieved successful grades in the course (by Course Name).
-    """
-    drv = Neo4jDriver()
-    try:
-        drv.connect()
-        recs = find_successful_peers_name(
-            name=name,
-            course_name=courseName,
-            neodriver=drv,
-            min_similarity=minSim,
-            grades=_parse_grades(grades),
-        )
-        return [dict(r) for r in recs]
+        out.sort(key=lambda x: x["similarity"], reverse=True)
+        return out
+
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     finally:
