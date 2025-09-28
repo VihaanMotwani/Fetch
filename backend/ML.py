@@ -7,10 +7,6 @@ from neo4j_driver import *
 from utils import *
 from datetime import datetime
 
-
-# -----------------------------
-# Flatten Neo4j records
-# -----------------------------
 def flatten_records(records):
     data = []
     for record in records:

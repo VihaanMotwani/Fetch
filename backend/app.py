@@ -7,6 +7,8 @@ from dotenv import load_dotenv
 from neo4j_driver import Neo4jDriver
 from query_functions import *
 from ML import predict as ml_predict
+from ai_summarizer import generate_summary
+from models import *
 
 load_dotenv()
 
@@ -168,3 +170,15 @@ def get_ml_recommendations(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/ai/summary", tags=["AI"])
+def ai_summary(body: AISummaryRequest):
+    print(os.getenv("OPENAI_API_KEY"))
+    try:
+        # Convert to a raw dict and pass straight through to the LLM prompt builder
+        result = generate_summary(body.model_dump())
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI summary failed: {e}")

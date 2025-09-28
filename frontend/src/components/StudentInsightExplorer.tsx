@@ -26,7 +26,7 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Loader2, Sparkles, Search } from "lucide-react";
+import { Loader2, Sparkles, Search, Wand2 } from "lucide-react";
 import {
   ResponsiveContainer,
   BarChart,
@@ -90,22 +90,17 @@ function seriesColor(key: string) {
 function PixelDog() {
   return (
     <div className="pointer-events-none fixed bottom-[-32px] inset-x-0 z-50">
-      {/* walker sets the across-screen motion and container size (64 = 2x of 32) */}
       <div className="dog-walker" aria-hidden="true">
-        {/* sprite handles the frame animation; we upscale via CSS transform */}
         <div className="dog-sprite" />
       </div>
 
-<style jsx>{`
-        /* Displayed size: 64x64 (2x). This is used in the walk distance calc. */
+      <style jsx>{`
         .dog-walker {
           width: 64px;
           height: 64px;
           will-change: transform;
-          /* 👇 Restored to 20s for the round trip */
           animation: dog-walk 20s linear infinite;
         }
-
         .dog-sprite {
           width: 32px;
           height: 32px;
@@ -114,22 +109,16 @@ function PixelDog() {
           background-position-y: -128px;   /* 5th row */
           background-position-x: -32px;    /* skip label column */
           image-rendering: pixelated;
-
           transform: scale(4);
           transform-origin: bottom left;
-
           animation: dog-run 1.2s steps(3) infinite;
         }
-
-        /* 👇 CORRECTED: Walk L->R then flip instantly and go back R->L */
         @keyframes dog-walk {
           0%   { transform: translateX(0) scaleX(1); }
-          50%  { transform: translateX(calc(100vw - 64px)) scaleX(1); } /* Arrives at edge */
-          50.01% { transform: translateX(calc(100vw - 64px)) scaleX(-1); } /* Flips instantly */
+          50%  { transform: translateX(calc(100vw - 64px)) scaleX(1); }
+          50.01% { transform: translateX(calc(100vw - 64px)) scaleX(-1); }
           100% { transform: translateX(0) scaleX(-1); }
         }
-
-        /* Animate frames for 3 steps */
         @keyframes dog-run {
           from { background-position-x: -32px; }
           to   { background-position-x: -128px; }
@@ -139,8 +128,7 @@ function PixelDog() {
   );
 }
 
-
-// --- Fetchers (same endpoints you already use) ---
+// --- Fetchers ---
 async function fetchPeers(params: {
   studentName: string;
   courseMode: "id" | "name";
@@ -172,6 +160,18 @@ async function fetchLearnerTypes(params: {
   return await res.json();
 }
 
+// ⬇️ Returns plain text from your FastAPI AI endpoint
+async function fetchAISummary(payload: unknown): Promise<string> {
+  const res = await fetch("/api/ai/summary", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const text = await res.text();
+  if (!res.ok) throw new Error(text || "AI summary failed");
+  return text;
+}
+
 // --- Component ---
 export default function StudentInsightExplorer() {
   const [studentName, setStudentName] = useState("");
@@ -191,6 +191,11 @@ export default function StudentInsightExplorer() {
 
   const [peers, setPeers] = useState<Peer[]>([]);
   const [learnerRows, setLearnerRows] = useState<LearnerRow[] | null>(null);
+
+  // 👇 AI states
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [aiText, setAiText] = useState<string | null>(null);
 
   const hasTextbooks = useMemo(
     () => peers.some((p) => (p.textbooks?.length ?? 0) > 0),
@@ -285,6 +290,11 @@ export default function StudentInsightExplorer() {
     setError(null);
     setLearnerRows(null);
 
+    // Reset AI panel on new searches to avoid stale summaries
+    setAiError(null);
+    setAiText(null);
+    setAiLoading(false);
+
     try {
       const peersRes = await fetchPeers({
         studentName: studentName.trim(),
@@ -309,6 +319,43 @@ export default function StudentInsightExplorer() {
     } finally {
       setLoading(false);
       setLoadingLearners(false);
+    }
+  }
+
+  // --- AI payload & action ---
+  function buildAISummaryPayload() {
+    return {
+      student_name: studentName?.trim() || null,
+      filters: {
+        min_similarity: minSim,
+        selected_grades: selectedGrades,
+        course_mode: courseMode,
+        course: course?.trim() || null,
+      },
+      // Use what we already computed/rendered on this page:
+      grade_distribution: gradeChartData,            // [{ grade, count }]
+      learner_type_distribution: gradeLearnerDistData, // [{ grade, <learner_type>: count, ... }]
+      peers: peers.map(p => ({
+        id: p.id,
+        grade: p.grade,
+        similarity: p.similarity,
+        textbooks: p.textbooks ?? [],
+      })),
+    };
+  }
+
+  async function onGenerateAISummary() {
+    setAiError(null);
+    setAiText(null);
+    setAiLoading(true);
+    try {
+      const payload = buildAISummaryPayload();
+      const text = await fetchAISummary(payload); // returns plain text
+      setAiText(text);
+    } catch (e: any) {
+      setAiError(e?.message || "Failed to generate summary");
+    } finally {
+      setAiLoading(false);
     }
   }
 
@@ -494,6 +541,54 @@ export default function StudentInsightExplorer() {
 
                   <TabsContent value="overview" className="mt-2">
                     <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                      {/* 🔹 AI Summary Card (full-width on first row) */}
+                      <div className="rounded-2xl border p-3 xl:col-span-2">
+                        <div className="mb-2 flex items-center justify-between">
+                          <h3 className="text-sm font-medium text-zinc-700">
+                            AI summary & recommendations
+                          </h3>
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={onGenerateAISummary}
+                            disabled={aiLoading}
+                            className="gap-1"
+                            title="Generate personalized summary from the current results"
+                          >
+                            {aiLoading ? (
+                              <>
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                                Generating…
+                              </>
+                            ) : (
+                              <>
+                                <Wand2 className="h-4 w-4" />
+                                Generate
+                              </>
+                            )}
+                          </Button>
+                        </div>
+
+                        {aiError && (
+                          <div className="rounded-lg bg-red-50 p-2 text-sm text-red-700">
+                            {aiError}
+                          </div>
+                        )}
+
+                        {!aiError && aiText && (
+                          <div className="prose prose-sm max-w-none whitespace-pre-wrap text-zinc-800">
+                            {aiText}
+                          </div>
+                        )}
+
+                        {!aiError && !aiText && !aiLoading && (
+                          <div className="text-sm text-zinc-500">
+                            Click “Generate” to produce a personalized summary based on the
+                            peers and distributions below.
+                          </div>
+                        )}
+                      </div>
+
                       {/* Grade distribution */}
                       <div className="rounded-2xl border p-3">
                         <h3 className="mb-2 text-sm font-medium text-zinc-700">
