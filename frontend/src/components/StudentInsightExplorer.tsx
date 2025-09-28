@@ -13,7 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Loader2, GraduationCap, Search, Users, Sparkles, TrendingUp } from "lucide-react";
-import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip } from "recharts";
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend } from "recharts";
 
 // --- Types ---
 interface Peer {
@@ -37,6 +37,17 @@ function gradeColor(grade: string) {
       return "bg-zinc-500";
   }
 }
+
+function gradeBucket(grade: string): "A" | "B" | "C" | "D" | null {
+  const g = (grade || "").trim().toUpperCase();
+  if (g.startsWith("A")) return "A";
+  if (g.startsWith("B")) return "B";
+  if (g.startsWith("C")) return "C";
+  // collapse D and F into the D bucket; tweak if you want F separate
+  if (g.startsWith("D") || g.startsWith("F")) return "D";
+  return null;
+}
+
 
 async function fetchPeers(params: {
   studentName: string;
@@ -91,6 +102,29 @@ export default function StudentInsightExplorer() {
       return acc;
     }, {});
     return Object.entries(aggregate).map(([grade, count]) => ({ grade, count }));
+  }, [peers]);
+
+  const textbookGradeDistData = useMemo(() => {
+    // counts[textbook] = { A,B,C,D }
+    const counts: Record<string, { A: number; B: number; C: number; D: number }> = {};
+    peers.forEach((p) => {
+      const bucket = gradeBucket(p.grade);
+      if (!bucket) return;
+      (p.textbooks ?? []).forEach((tb) => {
+        if (!counts[tb]) counts[tb] = { A: 0, B: 0, C: 0, D: 0 };
+        counts[tb][bucket] += 1;
+      });
+    });
+
+    const rows = Object.entries(counts).map(([textbook, buckets]) => ({
+      textbook,
+      ...buckets,
+      total: buckets.A + buckets.B + buckets.C + buckets.D,
+    }));
+
+    // sort by # of A-students, then total usage
+    rows.sort((a, b) => (b.A - a.A) || (b.total - a.total));
+    return rows.slice(0, 10); // top 10 textbooks
   }, [peers]);
 
   // New derived charts
@@ -378,22 +412,28 @@ export default function StudentInsightExplorer() {
                           </div>
                         </div>
                       ) : (
-                        <div className="rounded-2xl border p-3">
-                          <h3 className="mb-2 text-sm font-medium text-zinc-700">Top textbooks</h3>
-                          <div className="h-56">
-                            <ResponsiveContainer width="100%" height="100%">
-                              <BarChart data={topTextbooksData}>
-                                <XAxis dataKey="textbook" hide />
-                                <YAxis allowDecimals={false} />
-                                <Tooltip />
-                                <Bar dataKey="count" />
-                              </BarChart>
-                            </ResponsiveContainer>
+                          <div className="rounded-2xl border p-3">
+                            <h3 className="mb-2 text-sm font-medium text-zinc-700">Textbooks × Grade distribution</h3>
+                            <div className="h-56">
+                              <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={textbookGradeDistData}>
+                                  {/* textbook names can be long; hide axis labels to avoid overlap */}
+                                  <XAxis dataKey="textbook" hide />
+                                  <YAxis allowDecimals={false} />
+                                  <Tooltip />
+                                  <Legend />
+                                  {/* stacked by grade */}
+                                  <Bar dataKey="A" stackId="g" fill="var(--chart-1)" />
+                                  <Bar dataKey="B" stackId="g" fill="var(--chart-2)" />
+                                  <Bar dataKey="C" stackId="g" fill="var(--chart-3)" />
+                                  <Bar dataKey="D" stackId="g" fill="var(--chart-5)" />
+                                </BarChart>
+                              </ResponsiveContainer>
+                            </div>
+                            <p className="mt-2 text-xs text-zinc-500">
+                              Sorted by # of A-students. (We group F into the D bucket by default.)
+                            </p>
                           </div>
-                          <p className="mt-2 text-xs text-zinc-500">
-                            Showing top {topTextbooksData.length} textbooks across peers.
-                          </p>
-                        </div>
                       )}
                     </div>
                   </div>
