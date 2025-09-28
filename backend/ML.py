@@ -4,6 +4,7 @@ from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 from sklearn.neighbors import NearestNeighbors
 from neo4j_driver import *
+from utils import *
 from datetime import datetime
 
 
