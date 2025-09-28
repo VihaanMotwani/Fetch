@@ -54,6 +54,17 @@ type LearnerRow = {
   students: number;
 };
 
+const PALETTE = [
+  "#2563eb", // blue
+  "#16a34a", // green
+  "#f59e0b", // amber
+  "#db2777", // pink
+  "#7c3aed", // violet
+  "#06b6d4", // cyan
+  "#dc2626", // red
+  "#0891b2", // teal
+];
+
 // --- Color helpers ---
 function gradeColor(grade: string) {
   switch (grade) {
@@ -67,25 +78,16 @@ function gradeColor(grade: string) {
       return "bg-zinc-500";
   }
 }
+
+// Updated to use more distinct colors from the main palette
 const GRADE_FILLS: Record<string, string> = {
-  A: "#10b981",
-  "A-": "#34d399",
-  "B+": "#38bdf8",
+  A: PALETTE[1],   // green
+  "A-": PALETTE[5], // cyan
+  "B+": PALETTE[0], // blue
 };
 function gradeFill(g: string) {
   return GRADE_FILLS[g] ?? "#71717a";
 }
-
-const PALETTE = [
-  "#2563eb", // blue
-  "#16a34a", // green
-  "#f59e0b", // amber
-  "#db2777", // pink
-  "#7c3aed", // violet
-  "#06b6d4", // cyan
-  "#dc2626", // red
-  "#0891b2", // teal
-];
 
 function PixelDog() {
   return (
@@ -278,7 +280,7 @@ export default function StudentInsightExplorer() {
     return ["A", "B", "C", "D"].map((g) => ({ grade: g, ...base[g] }));
   }, [learnerRows]);
 
-  // --- Color Maps for Charts (FIXED) ---
+  // --- Color Maps for Charts ---
   const textbookKeys = useMemo(() => {
     if (!textbooksByGradeData || !textbooksByGradeData.length) return [];
     return Object.keys(textbooksByGradeData[0]).filter((k) => k !== "grade");
@@ -658,7 +660,11 @@ export default function StudentInsightExplorer() {
                                 />
                                 <YAxis allowDecimals={false} width={28} />
                                 <Tooltip />
-                                <Bar dataKey="count" />
+                                <Bar dataKey="count">
+                                  {similarityHist.map((entry, index) => (
+                                    <Cell key={`cell-${index}`} fill={PALETTE[index % PALETTE.length]} />
+                                  ))}
+                                </Bar>
                               </BarChart>
                             </ResponsiveContainer>
                           </div>
