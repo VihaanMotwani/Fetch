@@ -35,6 +35,7 @@ import {
   YAxis,
   Tooltip,
   Cell,
+  Legend
 } from "recharts";
 
 interface Peer {
@@ -74,6 +75,70 @@ const GRADE_FILLS: Record<string, string> = {
 function gradeFill(g: string) {
   return GRADE_FILLS[g] ?? "#71717a";
 }
+
+const SERIES_PALETTE = [
+  "#2563eb", "#db2777", "#16a34a", "#f59e0b", "#7c3aed",
+  "#059669", "#dc2626", "#0ea5e9", "#ea580c", "#9ca3af"
+];
+
+function seriesColor(key: string) {
+  let h = 0;
+  for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0;
+  return SERIES_PALETTE[h % SERIES_PALETTE.length];
+}
+
+function PixelDog() {
+  return (
+    <div className="pointer-events-none fixed bottom-[-32px] inset-x-0 z-50">
+      {/* walker sets the across-screen motion and container size (64 = 2x of 32) */}
+      <div className="dog-walker" aria-hidden="true">
+        {/* sprite handles the frame animation; we upscale via CSS transform */}
+        <div className="dog-sprite" />
+      </div>
+
+<style jsx>{`
+        /* Displayed size: 64x64 (2x). This is used in the walk distance calc. */
+        .dog-walker {
+          width: 64px;
+          height: 64px;
+          will-change: transform;
+          /* 👇 Restored to 20s for the round trip */
+          animation: dog-walk 20s linear infinite;
+        }
+
+        .dog-sprite {
+          width: 32px;
+          height: 32px;
+          background-image: url("/goldie.png");
+          background-repeat: no-repeat;
+          background-position-y: -128px;   /* 5th row */
+          background-position-x: -32px;    /* skip label column */
+          image-rendering: pixelated;
+
+          transform: scale(4);
+          transform-origin: bottom left;
+
+          animation: dog-run 1.2s steps(3) infinite;
+        }
+
+        /* 👇 CORRECTED: Walk L->R then flip instantly and go back R->L */
+        @keyframes dog-walk {
+          0%   { transform: translateX(0) scaleX(1); }
+          50%  { transform: translateX(calc(100vw - 64px)) scaleX(1); } /* Arrives at edge */
+          50.01% { transform: translateX(calc(100vw - 64px)) scaleX(-1); } /* Flips instantly */
+          100% { transform: translateX(0) scaleX(-1); }
+        }
+
+        /* Animate frames for 3 steps */
+        @keyframes dog-run {
+          from { background-position-x: -32px; }
+          to   { background-position-x: -128px; }
+        }
+      `}</style>
+    </div>
+  );
+}
+
 
 // --- Fetchers (same endpoints you already use) ---
 async function fetchPeers(params: {
@@ -248,351 +313,357 @@ export default function StudentInsightExplorer() {
   }
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-8">
-      {/* Header */}
-      <div className="mb-6 flex items-start justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            Student Insight Explorer
-          </h1>
-          <p className="mt-1 text-sm text-zinc-500">
-            Find peers with similar learning styles who succeeded in a course,
-            and visualize distributions.
-          </p>
-        </div>
-        <Badge variant="secondary" className="gap-1">
-          <Sparkles size={14} /> Demo
-        </Badge>
-      </div>
-
-      {/* Query builder */}
-      <Card className="mb-6 rounded-2xl">
-        <CardHeader>
-          <CardTitle>Query</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="student">Student</Label>
-              <Input
-                id="student"
-                placeholder="e.g., Bailey Morris"
-                value={studentName}
-                onChange={(e) => setStudentName(e.target.value)}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label>Course selection</Label>
-              <div className="grid grid-cols-2 gap-3">
-                <Select
-                  value={courseMode}
-                  onValueChange={(v: "id" | "name") => setCourseMode(v)}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="id">By Course ID</SelectItem>
-                    <SelectItem value="name">By Course Name</SelectItem>
-                  </SelectContent>
-                </Select>
-                {courseMode === "id" ? (
-                  <Input
-                    placeholder="e.g., CSCI-330"
-                    value={courseId}
-                    onChange={(e) => setCourseId(e.target.value)}
-                  />
-                ) : (
-                  <Input
-                    placeholder="e.g., Algorithms"
-                    value={courseName}
-                    onChange={(e) => setCourseName(e.target.value)}
-                  />
-                )}
-              </div>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-            <div className="space-y-3">
-              <Label>Minimum similarity ({Math.round(minSim * 100)}%)</Label>
-              <Slider
-                value={[minSim]}
-                min={0.5}
-                max={0.99}
-                step={0.01}
-                onValueChange={(vals) => setMinSim(vals[0])}
-              />
-              <p className="text-xs text-zinc-500">
-                Adjust the learning-style similarity threshold.
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <Label>Successful grades</Label>
-              <div className="flex items-center gap-3 py-1">
-                <Checkbox
-                  id="gA"
-                  checked={gradeA}
-                  onCheckedChange={(v) => setGradeA(Boolean(v))}
-                />
-                <Label htmlFor="gA">A</Label>
-                <Checkbox
-                  id="gA-"
-                  checked={gradeAMinus}
-                  onCheckedChange={(v) => setGradeAMinus(Boolean(v))}
-                />
-                <Label htmlFor="gA-">A-</Label>
-                <Checkbox
-                  id="gB+"
-                  checked={gradeBPlus}
-                  onCheckedChange={(v) => setGradeBPlus(Boolean(v))}
-                />
-                <Label htmlFor="gB+">B+</Label>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label>Extras</Label>
-              <div className="flex items-center gap-3 py-1">
-                <Checkbox
-                  id="tb"
-                  checked={includeTextbooks}
-                  onCheckedChange={(v) => setIncludeTextbooks(Boolean(v))}
-                />
-                <Label htmlFor="tb">Include textbooks</Label>
-                <Separator orientation="vertical" className="mx-2 h-4" />
-                <Checkbox
-                  id="lt"
-                  checked={showLearnerTypes}
-                  onCheckedChange={(v) => setShowLearnerTypes(Boolean(v))}
-                />
-                <Label htmlFor="lt">Show course learner types</Label>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <Button onClick={onSearch} disabled={!canSearch || loading}>
-              {loading ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Searching
-                </>
-              ) : (
-                <>
-                  <Search className="mr-2 h-4 w-4" /> Search
-                </>
-              )}
-            </Button>
-            {loadingLearners && (
-              <span className="inline-flex items-center text-sm text-zinc-500">
-                <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> Loading
-                learner types…
-              </span>
-            )}
-          </div>
-
-          {error && (
-            <div className="rounded-xl bg-red-50 p-3 text-sm text-red-700">
-              {error}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Results */}
-      <Card className="rounded-2xl">
-        <CardHeader>
-          <CardTitle>Results</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {peers.length === 0 ? (
-            <p className="text-sm text-zinc-500">
-              No results yet. Run a search to see peers.
+    <div className="min-h-screen bg-emerald-50 dark:bg-emerald-950">
+      <div className="mx-auto max-w-6xl px-4 py-8">
+        {/* Header */}
+        <div className="mb-6 flex items-start justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight">
+              Student Insight Explorer
+            </h1>
+            <p className="mt-1 text-sm text-zinc-500">
+              Find peers with similar learning styles who succeeded in a course,
+              and visualize distributions.
             </p>
-          ) : (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="text-sm text-zinc-500">
-                  {peers.length} peers · minSim {(minSim * 100).toFixed(0)}% ·
-                  grades {selectedGrades.join(", ")}
+          </div>
+          <Badge variant="secondary" className="gap-1">
+            <Sparkles size={14} /> Demo
+          </Badge>
+        </div>
+
+        {/* Query builder */}
+        <Card className="mb-6 rounded-2xl">
+          <CardHeader>
+            <CardTitle>Query</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="student">Student</Label>
+                <Input
+                  id="student"
+                  placeholder="e.g., Bailey Morris"
+                  value={studentName}
+                  onChange={(e) => setStudentName(e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Course selection</Label>
+                <div className="grid grid-cols-2 gap-3">
+                  <Select
+                    value={courseMode}
+                    onValueChange={(v: "id" | "name") => setCourseMode(v)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="id">By Course ID</SelectItem>
+                      <SelectItem value="name">By Course Name</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {courseMode === "id" ? (
+                    <Input
+                      placeholder="e.g., CSCI-330"
+                      value={courseId}
+                      onChange={(e) => setCourseId(e.target.value)}
+                    />
+                  ) : (
+                    <Input
+                      placeholder="e.g., Algorithms"
+                      value={courseName}
+                      onChange={(e) => setCourseName(e.target.value)}
+                    />
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+              <div className="space-y-3">
+                <Label>Minimum similarity ({Math.round(minSim * 100)}%)</Label>
+                <Slider
+                  value={[minSim]}
+                  min={0.5}
+                  max={0.99}
+                  step={0.01}
+                  onValueChange={(vals) => setMinSim(vals[0])}
+                />
+                <p className="text-xs text-zinc-500">
+                  Adjust the learning-style similarity threshold.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Successful grades</Label>
+                <div className="flex items-center gap-3 py-1">
+                  <Checkbox
+                    id="gA"
+                    checked={gradeA}
+                    onCheckedChange={(v) => setGradeA(Boolean(v))}
+                  />
+                  <Label htmlFor="gA">A</Label>
+                  <Checkbox
+                    id="gA-"
+                    checked={gradeAMinus}
+                    onCheckedChange={(v) => setGradeAMinus(Boolean(v))}
+                  />
+                  <Label htmlFor="gA-">A-</Label>
+                  <Checkbox
+                    id="gB+"
+                    checked={gradeBPlus}
+                    onCheckedChange={(v) => setGradeBPlus(Boolean(v))}
+                  />
+                  <Label htmlFor="gB+">B+</Label>
                 </div>
               </div>
 
-              <Tabs defaultValue="overview" className="w-full">
-                <TabsList>
-                  <TabsTrigger value="overview">Overview</TabsTrigger>
-                  <TabsTrigger value="table">Table</TabsTrigger>
-                </TabsList>
+              <div className="space-y-2">
+                <Label>Extras</Label>
+                <div className="flex items-center gap-3 py-1">
+                  <Checkbox
+                    id="tb"
+                    checked={includeTextbooks}
+                    onCheckedChange={(v) => setIncludeTextbooks(Boolean(v))}
+                  />
+                  <Label htmlFor="tb">Include textbooks</Label>
+                  <Separator orientation="vertical" className="mx-2 h-4" />
+                  <Checkbox
+                    id="lt"
+                    checked={showLearnerTypes}
+                    onCheckedChange={(v) => setShowLearnerTypes(Boolean(v))}
+                  />
+                  <Label htmlFor="lt">Show course learner types</Label>
+                </div>
+              </div>
+            </div>
 
-                <TabsContent value="overview" className="mt-2">
-                  <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-                    {/* Grade distribution */}
-                    <div className="rounded-2xl border p-3">
-                      <h3 className="mb-2 text-sm font-medium text-zinc-700">
-                        Grade distribution
-                      </h3>
-                      <div className="h-64">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <BarChart
-                            data={gradeChartData}
-                            margin={{ top: 8, right: 16, bottom: 24, left: 0 }}
-                            barCategoryGap={8}
-                            barGap={4}
-                          >
-                            <XAxis dataKey="grade" padding={{ left: 0, right: 8 }} />
-                            <YAxis allowDecimals={false} width={28} />
-                            <Tooltip />
-                            <Bar dataKey="count">
-                              {gradeChartData.map((d, i) => (
-                                <Cell key={i} fill={gradeFill(d.grade)} />
-                              ))}
-                            </Bar>
-                          </BarChart>
-                        </ResponsiveContainer>
-                      </div>
-                    </div>
+            <div className="flex items-center gap-3">
+              <Button onClick={onSearch} disabled={!canSearch || loading}>
+                {loading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Searching
+                  </>
+                ) : (
+                  <>
+                    <Search className="mr-2 h-4 w-4" /> Search
+                  </>
+                )}
+              </Button>
+              {loadingLearners && (
+                <span className="inline-flex items-center text-sm text-zinc-500">
+                  <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> Loading
+                  learner types…
+                </span>
+              )}
+            </div>
 
-                    {/* If no textbooks → similarity histogram; else → Textbooks × Grade */}
-                    {!hasTextbooks ? (
-                      <div className="rounded-2xl border p-3">
-                        <h3 className="mb-2 text-sm font-medium text-zinc-700">
-                          Similarity histogram
-                        </h3>
-                        <div className="h-64">
-                          <ResponsiveContainer width="100%" height="100%">
-                            <BarChart
-                              data={similarityHist}
-                              margin={{ top: 8, right: 16, bottom: 24, left: 0 }}
-                              barCategoryGap={2}
-                            >
-                              <XAxis
-                                dataKey="bucket"
-                                padding={{ left: 0, right: 8 }}
-                              />
-                              <YAxis allowDecimals={false} width={28} />
-                              <Tooltip />
-                              <Bar dataKey="count" />
-                            </BarChart>
-                          </ResponsiveContainer>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="rounded-2xl border p-3">
-                        <h3 className="mb-2 text-sm font-medium text-zinc-700">
-                          Textbooks × Grade
-                        </h3>
-                        <div className="h-64">
-                          <ResponsiveContainer width="100%" height="100%">
-                            <BarChart
-                              data={textbooksByGradeData}
-                              margin={{ top: 8, right: 16, bottom: 24, left: 0 }}
-                            >
-                              <XAxis dataKey="grade" padding={{ left: 0, right: 8 }} />
-                              <YAxis allowDecimals={false} width={28} />
-                              <Tooltip />
-                              {Object.keys(textbooksByGradeData[0] || {})
-                                .filter((k) => k !== "grade")
-                                .map((k) => (
-                                  <Bar key={k} dataKey={k} stackId="tb" />
-                                ))}
-                            </BarChart>
-                          </ResponsiveContainer>
-                        </div>
-                      </div>
-                    )}
+            {error && (
+              <div className="rounded-xl bg-red-50 p-3 text-sm text-red-700">
+                {error}
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
-                    {!!showLearnerTypes && (
-                      <div className="rounded-2xl border p-3 xl:col-span-2">
-                        <h3 className="mb-2 text-sm font-medium text-zinc-700">
-                          Learner types by grade
-                        </h3>
-                        <div className="h-72">
-                          <ResponsiveContainer width="100%" height="100%">
-                            <BarChart
-                              data={gradeLearnerDistData}
-                              margin={{ top: 8, right: 16, bottom: 24, left: 0 }}
-                            >
-                              <XAxis dataKey="grade" padding={{ left: 0, right: 8 }} />
-                              <YAxis allowDecimals={false} width={28} />
-                              <Tooltip />
-                              {learnerTypeKeys.map((k) => (
-                                <Bar key={k} dataKey={k} stackId="lt" />
-                              ))}
-                            </BarChart>
-                          </ResponsiveContainer>
-                        </div>
-                      </div>
-                    )}
+        {/* Results */}
+        <Card className="rounded-2xl">
+          <CardHeader>
+            <CardTitle>Results</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {peers.length === 0 ? (
+              <p className="text-sm text-zinc-500">
+                No results yet. Run a search to see peers.
+              </p>
+            ) : (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="text-sm text-zinc-500">
+                    {peers.length} peers · minSim {(minSim * 100).toFixed(0)}% ·
+                    grades {selectedGrades.join(", ")}
                   </div>
-                </TabsContent>
+                </div>
 
-                <TabsContent value="table" className="mt-2">
-                  <div className="rounded-2xl border p-3">
-                    <Table>
-                      <TableCaption>
-                        Similar, successful peers for the selected course
-                      </TableCaption>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Peer</TableHead>
-                          <TableHead className="w-32">Grade</TableHead>
-                          <TableHead className="w-40">Similarity</TableHead>
-                          {hasTextbooks && (
-                            <TableHead className="min-w-[220px]">Textbooks</TableHead>
-                          )}
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {peers.map((p) => (
-                          <TableRow key={p.id}>
-                            <TableCell>
-                              <div className="flex flex-col">
-                                <span className="font-medium">{p.name}</span>
-                                <span className="text-xs text-zinc-500">{p.id}</span>
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              <span
-                                className={`inline-flex h-6 items-center rounded-full px-2 text-xs font-medium text-white ${gradeColor(
-                                  p.grade
-                                )}`}
+                <Tabs defaultValue="overview" className="w-full">
+                  <TabsList>
+                    <TabsTrigger value="overview">Overview</TabsTrigger>
+                    <TabsTrigger value="table">Table</TabsTrigger>
+                  </TabsList>
+
+                  <TabsContent value="overview" className="mt-2">
+                    <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                      {/* Grade distribution */}
+                      <div className="rounded-2xl border p-3">
+                        <h3 className="mb-2 text-sm font-medium text-zinc-700">
+                          Grade distribution
+                        </h3>
+                        <div className="h-64">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <BarChart
+                              data={gradeChartData}
+                              margin={{ top: 8, right: 16, bottom: 24, left: 0 }}
+                              barCategoryGap={8}
+                              barGap={4}
+                            >
+                              <XAxis dataKey="grade" padding={{ left: 0, right: 8 }} />
+                              <YAxis allowDecimals={false} width={28} />
+                              <Tooltip />
+                              <Legend />
+                              <Bar dataKey="count">
+                                {gradeChartData.map((d, i) => (
+                                  <Cell key={i} fill={gradeFill(d.grade)} />
+                                ))}
+                              </Bar>
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </div>
+
+                      {/* If no textbooks → similarity histogram; else → Textbooks × Grade */}
+                      {!hasTextbooks ? (
+                        <div className="rounded-2xl border p-3">
+                          <h3 className="mb-2 text-sm font-medium text-zinc-700">
+                            Similarity histogram
+                          </h3>
+                          <div className="h-64">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <BarChart
+                                data={similarityHist}
+                                margin={{ top: 8, right: 16, bottom: 24, left: 0 }}
+                                barCategoryGap={2}
                               >
-                                {p.grade}
-                              </span>
-                            </TableCell>
-                            <TableCell>{(p.similarity * 100).toFixed(1)}%</TableCell>
-                            {hasTextbooks && (
-                              <TableCell className="max-w-[280px]">
-                                {(p.textbooks ?? [])
-                                  .slice(0, 3)
-                                  .map((tb) => (
-                                    <span
-                                      key={tb}
-                                      className="mr-2 mb-1 inline-flex rounded-full bg-zinc-100 px-2 py-0.5 text-xs"
-                                    >
-                                      {tb}
-                                    </span>
+                                <XAxis
+                                  dataKey="bucket"
+                                  padding={{ left: 0, right: 8 }}
+                                />
+                                <YAxis allowDecimals={false} width={28} />
+                                <Tooltip />
+                                <Bar dataKey="count" />
+                              </BarChart>
+                            </ResponsiveContainer>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="rounded-2xl border p-3">
+                          <h3 className="mb-2 text-sm font-medium text-zinc-700">
+                            Textbooks × Grade
+                          </h3>
+                          <div className="h-64">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <BarChart
+                                data={textbooksByGradeData}
+                                margin={{ top: 8, right: 16, bottom: 24, left: 0 }}
+                              >
+                                <XAxis dataKey="grade" padding={{ left: 0, right: 8 }} />
+                                <YAxis allowDecimals={false} width={28} />
+                                <Tooltip />
+                                <Legend />
+                                {Object.keys(textbooksByGradeData[0] || {})
+                                  .filter((k) => k !== "grade")
+                                  .map((k) => (
+                                    <Bar key={k} dataKey={k} stackId="tb" />
                                   ))}
-                                {(p.textbooks?.length ?? 0) > 3 && (
-                                  <span className="text-xs text-zinc-500">
-                                    +{p.textbooks!.length - 3} more
-                                  </span>
-                                )}
-                              </TableCell>
+                              </BarChart>
+                            </ResponsiveContainer>
+                          </div>
+                        </div>
+                      )}
+
+                      {!!showLearnerTypes && (
+                        <div className="rounded-2xl border p-3 xl:col-span-2">
+                          <h3 className="mb-2 text-sm font-medium text-zinc-700">
+                            Learner types by grade
+                          </h3>
+                          <div className="h-72">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <BarChart
+                                data={gradeLearnerDistData}
+                                margin={{ top: 8, right: 16, bottom: 24, left: 0 }}
+                              >
+                                <XAxis dataKey="grade" padding={{ left: 0, right: 8 }} />
+                                <YAxis allowDecimals={false} width={28} />
+                                <Tooltip />
+                                <Legend />
+                                {learnerTypeKeys.map((k) => (
+                                  <Bar key={k} dataKey={k} stackId="lt" />
+                                ))}
+                              </BarChart>
+                            </ResponsiveContainer>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </TabsContent>
+
+                  <TabsContent value="table" className="mt-2">
+                    <div className="rounded-2xl border p-3">
+                      <Table>
+                        <TableCaption>
+                          Similar, successful peers for the selected course
+                        </TableCaption>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Peer</TableHead>
+                            <TableHead className="w-32">Grade</TableHead>
+                            <TableHead className="w-40">Similarity</TableHead>
+                            {hasTextbooks && (
+                              <TableHead className="min-w-[220px]">Textbooks</TableHead>
                             )}
                           </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                </TabsContent>
-              </Tabs>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+                        </TableHeader>
+                        <TableBody>
+                          {peers.map((p) => (
+                            <TableRow key={p.id}>
+                              <TableCell>
+                                <div className="flex flex-col">
+                                  <span className="font-medium">{p.name}</span>
+                                  <span className="text-xs text-zinc-500">{p.id}</span>
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                <span
+                                  className={`inline-flex h-6 items-center rounded-full px-2 text-xs font-medium text-white ${gradeColor(
+                                    p.grade
+                                  )}`}
+                                >
+                                  {p.grade}
+                                </span>
+                              </TableCell>
+                              <TableCell>{(p.similarity * 100).toFixed(1)}%</TableCell>
+                              {hasTextbooks && (
+                                <TableCell className="max-w-[280px]">
+                                  {(p.textbooks ?? [])
+                                    .slice(0, 3)
+                                    .map((tb) => (
+                                      <span
+                                        key={tb}
+                                        className="mr-2 mb-1 inline-flex rounded-full bg-zinc-100 px-2 py-0.5 text-xs"
+                                      >
+                                        {tb}
+                                      </span>
+                                    ))}
+                                  {(p.textbooks?.length ?? 0) > 3 && (
+                                    <span className="text-xs text-zinc-500">
+                                      +{p.textbooks!.length - 3} more
+                                    </span>
+                                  )}
+                                </TableCell>
+                              )}
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </TabsContent>
+                </Tabs>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+        <PixelDog />
+      </div>
     </div>
   );
 }
