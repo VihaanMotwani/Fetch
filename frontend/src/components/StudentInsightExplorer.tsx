@@ -20,7 +20,8 @@ interface Peer {
   id: string;
   name: string;
   grade: "A" | "A-" | "B+" | string;
-  similarity: number; // 0..1
+  similarity: number;
+  textbooks?: string[];
 }
 
 // --- Mock toggle ---
@@ -46,6 +47,7 @@ async function fetchPeers(params: {
   course: string;      // courseId or courseName value
   minSim: number;
   grades: string[];
+  withTextbooks?: boolean;
 }): Promise<Peer[]> {
   const query = new URLSearchParams({
     name: params.studentName,
@@ -53,6 +55,7 @@ async function fetchPeers(params: {
     course: params.course,
     minSim: String(params.minSim),
     grades: params.grades.join(","),
+    withTextbooks: String(params.withTextbooks ?? false)
   });
   const res = await fetch(`/api/peers?${query.toString()}`);
   if (!res.ok) throw new Error("Failed to fetch peers");
@@ -72,6 +75,13 @@ export default function StudentInsightExplorer() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [peers, setPeers] = useState<Peer[]>([]);
+  // state (with the others)
+  const [includeTextbooks, setIncludeTextbooks] = useState(false);
+  const hasTextbooks = useMemo(
+    () => peers.some(p => (p.textbooks?.length ?? 0) > 0),
+    [peers]
+  );
+
 
   const selectedGrades = useMemo(
     () => [gradeA && "A", gradeAMinus && "A-", gradeBPlus && "B+"].filter(Boolean) as string[],
@@ -99,6 +109,7 @@ export default function StudentInsightExplorer() {
         course: courseMode === "id" ? courseId : courseName,
         minSim,
         grades: selectedGrades,
+        withTextbooks: includeTextbooks,
       });
       setPeers(data);
     } catch (e: any) {
@@ -166,8 +177,22 @@ export default function StudentInsightExplorer() {
                     <Label htmlFor="courseName">Course name</Label>
                     <Input id="courseName" placeholder="e.g., Algorithms" value={courseName} onChange={(e) => setCourseName(e.target.value)} />
                   </div>
+
+                  
                 )}
               </div>
+              <div className="space-y-2">
+                <Label>Extras</Label>
+                <div className="flex items-center gap-3 py-1">
+                  <Checkbox
+                    id="withTextbooks"
+                    checked={includeTextbooks}
+                    onCheckedChange={(v) => setIncludeTextbooks(Boolean(v))}
+                  />
+                  <Label htmlFor="withTextbooks">Include textbooks</Label>
+                </div>
+              </div>
+
 
               <Separator />
 
@@ -221,6 +246,7 @@ export default function StudentInsightExplorer() {
                             <TableHead>Peer</TableHead>
                             <TableHead className="w-32">Grade</TableHead>
                             <TableHead className="w-40">Similarity</TableHead>
+                            {hasTextbooks && <TableHead className="min-w-[220px]">Textbooks</TableHead>}
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -240,6 +266,23 @@ export default function StudentInsightExplorer() {
                               <TableCell>
                                 {(p.similarity * 100).toFixed(1)}%
                               </TableCell>
+                              {hasTextbooks && (
+                                <TableCell className="max-w-[280px]">
+                                  {(p.textbooks ?? []).slice(0, 3).map(tb => (
+                                    <span
+                                      key={tb}
+                                      className="mr-2 mb-1 inline-flex rounded-full bg-zinc-100 px-2 py-0.5 text-xs"
+                                    >
+                                      {tb}
+                                    </span>
+                                  ))}
+                                  {(p.textbooks?.length ?? 0) > 3 && (
+                                    <span className="text-xs text-zinc-500">
+                                      +{(p.textbooks!.length - 3)} more
+                                    </span>
+                                  )}
+                                </TableCell>
+                              )}
                             </TableRow>
                           ))}
                         </TableBody>
