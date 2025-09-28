@@ -1,13 +1,16 @@
 from neo4j import GraphDatabase
 from dotenv import load_dotenv
+from query_functions import *
 import os
 
+
+load_dotenv()
 class Neo4jDriver:
-    def __init__(self, uri=None, user=None, password=None, database=None):
-        self._uri = uri or os.getenv("NEO4J_DATABASE_URI")
-        self._user = user or os.getenv("NEO4J_USERNAME")
-        self._pwd = password or os.getenv("NEO4J_PASSWORD")
-        self._db = database or os.getenv("NEO4J_DATABASE")
+    def __init__(self):
+        self._uri = os.getenv("NEO4J_DATABASE_URI")
+        self._user = os.getenv("NEO4J_USERNAME")
+        self._pwd = os.getenv("NEO4J_PASSWORD")
+        self._db = os.getenv("NEO4J_DATABASE")
         self._driver = None
 
     def connect(self):
@@ -17,21 +20,20 @@ class Neo4jDriver:
         self._driver = GraphDatabase.driver(
             self._uri, auth=(self._user, self._pwd)
         )
-        self._driver.verify_connectivity()
+        with self._driver.session(database=self._db) as session:
+            session.run("RETURN 1")
 
     def close(self):
         if self._driver:
             self._driver.close()
 
-    def run_query(self, query: str, database: str = None):
+    def run_query(self, query: str):
         if not self._driver:
             raise RuntimeError("Driver is not connected. Call connect() first.")
-        
-        db = database or self._db
 
         records, summary, keys = self._driver.execute_query(
             query,
-            database_=db
+            database_=self._db
         )
         
         return records, summary, keys
