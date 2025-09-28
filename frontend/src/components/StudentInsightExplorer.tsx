@@ -658,7 +658,7 @@ export default function StudentInsightExplorer() {
                                 {Object.keys(textbooksByGradeData[0] || {})
                                   .filter((k) => k !== "grade")
                                   .map((k) => (
-                                    <Bar key={k} dataKey={k} stackId="tb" />
+                                    <Bar key={k} dataKey={k} stackId="tb" fill={seriesColor(k)} />
                                   ))}
                               </BarChart>
                             </ResponsiveContainer>
@@ -682,7 +682,7 @@ export default function StudentInsightExplorer() {
                                 <Tooltip />
                                 <Legend />
                                 {learnerTypeKeys.map((k) => (
-                                  <Bar key={k} dataKey={k} stackId="lt" />
+                                  <Bar key={k} dataKey={k} stackId="lt" fill={seriesColor(k)} />
                                 ))}
                               </BarChart>
                             </ResponsiveContainer>
