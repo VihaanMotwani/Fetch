@@ -28,13 +28,13 @@ def find_course_id_from_name(neodriver, course_name: str):
     course_name=course_name,
     database_=neodriver._db
     )
-    return records[0]["course_id"]
+    return records[0]["course_id"] if records else None
 
 def find_peers_with_textbooks(neodriver, student_name: str, course_id: str, min_similarity: float = 0.8, grades=("A","A-","B+")):
     records, summary, keys = neodriver._driver.execute_query("""
     MATCH (you:Student {name: $name})-[yourGrade:COMPLETED]->(course:Course {id: $course_id})
     MATCH (you)-[sim:SIMILAR_LEARNING_STYLE]->(peer:Student)-[peerGrade:COMPLETED]->(course)
-    WHERE sim.similarity > $minSim 
+    WHERE sim.similarity >= $minSim 
       AND peerGrade.grade IN $grades
     OPTIONAL MATCH (peer)-[interactionType:INTERACTED_WITH]->(textbook:Textbook)<-[:ASSIGNED_TO_A_COURSE]-(course)
     RETURN peer.id AS id,
@@ -98,30 +98,66 @@ def find_student_id(neodriver, student_name: str):
     student_name=student_name,
     database_=neodriver._db
     )
-    return records[0]["id"]
+    return records[0]["id"] if records else None
 
 def find_student_degree(neodriver, student_id: str):
     records, summary, keys = neodriver._driver.execute_query("""
     // Find the degree(s) of the given student
     MATCH (me:Student {id: $student_id})-[:DEGREE]->(d:Degree)
-    RETURN d.name AS degree_name
+    RETURN d.id AS degree_id
     """,
     student_id=student_id,
     database_=neodriver._db
     )
-    return records[0]["degree_name"]
+    return records[0]["degree_id"] if records else None
 
 def find_alumni_that_finished_from_same_degree(neodriver, degree_id: str):
     records, summary, keys = neodriver._driver.execute_query("""
-    MATCH (alumni:Student)-[:DEGREE]->(d:Degree {degreeId: $degree_id})
+    MATCH (alumni:Student)-[:DEGREE]->(d:Degree {id: $degree_id})
     WHERE alumni.expectedGraduation < date()
-    RETURN alumni.studentId AS student_id,
-           alumni.name AS student_name,
-           d.name AS degree_name,
-           alumni.expectedGraduation AS graduation_date
+    RETURN alumni.id
     ORDER BY alumni.expectedGraduation
     """,
     degree_id=degree_id,
     database_=neodriver._db
     )
-    return [dict(record) for record in records]
+    return [dict(record) for record in records] if records else None
+
+def find_path_of_alumnus(neodriver, student_id: str):
+    records, summary, keys = neodriver._driver.execute_query("""
+    MATCH (alumni:Student {id: $student_id})-[rel:COMPLETED]->(c:Course)
+    RETURN c.id AS course_id,
+        rel.term AS term
+    """,
+    student_id=student_id,
+    database_=neodriver._db
+    )
+    return [dict(record) for record in records] if records else None
+
+def get_student_features_from_id(neodriver, student_id: str):
+    records, summary, keys = neodriver._driver.execute_query("""
+    MATCH (s:Student {id: $student_id})
+    RETURN s.learningStyle, s.preferredCourseLoad, s.preferredPace, s.workHoursPerWeek,
+                s.financialAidStatus, s.preferredInstructionMode
+    """,
+    student_id=student_id,
+    database_=neodriver._db
+    )
+    return [dict(record) for record in records] if records else None
+
+def get_students_GPA_from_id(neodriver, student_id: str):
+    records, summary, keys = neodriver._driver.execute_query("""
+    MATCH (student:Student {id: $student_id})-[g:COMPLETED]->(:Course)
+    WITH student,
+        AVG(CASE g.grade
+            WHEN 'A' THEN 4.0 WHEN 'A-' THEN 3.7
+            WHEN 'B+' THEN 3.3 WHEN 'B' THEN 3.0 WHEN 'B-' THEN 2.7
+            WHEN 'C+' THEN 2.3 WHEN 'C' THEN 2.0 WHEN 'C-' THEN 1.7
+            WHEN 'D+' THEN 1.3 WHEN 'D' THEN 1.0
+            ELSE 0 END) AS GPA
+    RETURN GPA
+    """,
+    student_id=student_id,
+    database_=neodriver._db
+    )
+    return [dict(record) for record in records] if records else None

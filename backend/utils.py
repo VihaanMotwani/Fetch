@@ -1,4 +1,4 @@
-def sort_courses_dict(courses, descending=False):
+def sort_courses_dict(courses, gpa, student_data, descending=False):
     season_order = {"Spring": 1, "Summer": 2, "Fall": 3, "Winter": 4}
     
     def parse_term(term):
@@ -8,24 +8,11 @@ def sort_courses_dict(courses, descending=False):
                 return term[:i], int(term[i:])
         return term, 0
 
-    return sorted(
+    return [sorted(
         courses,
         key=lambda course: (
             parse_term(course["term"])[1],                 # year
             season_order[parse_term(course["term"])[0]]    # season
         ),
         reverse=descending
-    )
-
-data = [
-    {"course_id": "CS101", "term": "Spring2021"},
-    {"course_id": "CS102", "term": "Fall2024"},
-    {"course_id": "CS103", "term": "Summer2025"},
-    {"course_id": "CS104", "term": "Fall2020"},
-    {"course_id": "CS105", "term": "Winter2021"},
-]
-
-# Example usage
-sorted_data = sort_courses_dict(data)
-for c in sorted_data:
-    print(c)
+    ), gpa, student_data]

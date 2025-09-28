@@ -16,11 +16,12 @@ CALL (row) {
   WITH trim(row.`:START_ID(Student)`) AS sid,
        trim(row.`:END_ID(Course)`)    AS cid,
        row.grade                      AS grade,
-       toFloatOrNull(row.`difficulty:int`)  AS diff
+       toFloatOrNull(row.`difficulty:int`)  AS diff,
+       row.term                         AS term
   WHERE sid <> '' AND cid <> ''
   MATCH (s:Student {id: sid})
   MATCH (c:Course  {id: cid})
-  CREATE (s)-[:COMPLETED {grade: grade, difficulty: diff}]->(c)
+  CREATE (s)-[:COMPLETED {grade: grade, difficulty: diff, term: term}]->(c)
 } IN TRANSACTIONS OF 1000 ROWS;
 
 // performance_similarity.csv
@@ -67,3 +68,14 @@ CALL (row) {
     type: type
   }]->(t)
 } IN TRANSACTIONS OF 1000 ROWS;
+
+LOAD CSV WITH HEADERS FROM 'file:///student_degree.csv' AS row
+WITH row.`:START_ID(Student)` AS studentId, row.`:END_ID(Degree)` AS degreeId
+CALL (row) {
+  WITH studentId, degreeId
+  MATCH (s:Student {id: studentId})
+  MATCH (d:Degree  {id: degreeId})
+  MERGE (s)-[:DEGREE]->(d)
+} IN TRANSACTIONS OF 1000 ROWS;
+
+
