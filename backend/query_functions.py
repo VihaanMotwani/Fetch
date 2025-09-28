@@ -161,3 +161,13 @@ def get_students_GPA_from_id(neodriver, student_id: str):
     database_=neodriver._db
     )
     return [dict(record) for record in records] if records else None
+
+def get_students_end_date_from_id(neodriver, student_id: str):
+    records, summary, keys = neodriver._driver.execute_query("""
+    MATCH (s:Student {id: $student_id})
+    RETURN s.expectedGraduation as graduation
+    """,
+    student_id=student_id,
+    database_=neodriver._db
+    )
+    return records[0]["graduation"]
