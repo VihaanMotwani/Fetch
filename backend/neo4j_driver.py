@@ -20,20 +20,14 @@ class Neo4jDriver:
         self._driver = GraphDatabase.driver(
             self._uri, auth=(self._user, self._pwd)
         )
-        with self._driver.session(database=self._db) as session:
-            session.run("RETURN 1")
 
     def close(self):
         if self._driver:
             self._driver.close()
+            self._driver = None
 
-    def run_query(self, query: str):
+    def run(self, query: str, **params):
         if not self._driver:
-            raise RuntimeError("Driver is not connected. Call connect() first.")
-
-        records, summary, keys = self._driver.execute_query(
-            query,
-            database_=self._db
-        )
-        
-        return records, summary, keys
+            raise RuntimeError("Driver not connected. Call connect() first.")
+        result = self._driver.execute_query(query, parameters_=params, database_=self._db)
+        return result
