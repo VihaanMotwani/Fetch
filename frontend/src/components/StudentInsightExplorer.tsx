@@ -76,15 +76,22 @@ function gradeFill(g: string) {
   return GRADE_FILLS[g] ?? "#71717a";
 }
 
-const SERIES_PALETTE = [
-  "#2563eb", "#db2777", "#16a34a", "#f59e0b", "#7c3aed",
-  "#059669", "#dc2626", "#0ea5e9", "#ea580c", "#9ca3af"
+const PALETTE = [
+  "#2563eb", // blue
+  "#16a34a", // green
+  "#f59e0b", // amber
+  "#db2777", // pink
+  "#7c3aed", // violet
+  "#06b6d4", // cyan
+  "#dc2626", // red
+  "#0891b2", // teal
 ];
 
-function seriesColor(key: string) {
-  let h = 0;
-  for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0;
-  return SERIES_PALETTE[h % SERIES_PALETTE.length];
+// Minimal mapping: deterministic but short & sweet
+function colorFor(key: string) {
+  let sum = 0;
+  for (let i = 0; i < key.length; i++) sum += key.charCodeAt(i);
+  return PALETTE[sum % PALETTE.length];
 }
 
 function PixelDog() {
@@ -658,7 +665,7 @@ export default function StudentInsightExplorer() {
                                 {Object.keys(textbooksByGradeData[0] || {})
                                   .filter((k) => k !== "grade")
                                   .map((k) => (
-                                    <Bar key={k} dataKey={k} stackId="tb" fill={seriesColor(k)} />
+                                    <Bar key={k} dataKey={k} stackId="tb" fill={colorFor(k)} />
                                   ))}
                               </BarChart>
                             </ResponsiveContainer>
@@ -682,7 +689,7 @@ export default function StudentInsightExplorer() {
                                 <Tooltip />
                                 <Legend />
                                 {learnerTypeKeys.map((k) => (
-                                  <Bar key={k} dataKey={k} stackId="lt" fill={seriesColor(k)} />
+                                  <Bar key={k} dataKey={k} stackId="lt" fill={colorFor(k)} />
                                 ))}
                               </BarChart>
                             </ResponsiveContainer>
