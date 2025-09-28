@@ -79,7 +79,6 @@ function gradeColor(grade: string) {
   }
 }
 
-// Updated to use more distinct colors from the main palette
 const GRADE_FILLS: Record<string, string> = {
   A: PALETTE[1],   // green
   "A-": PALETTE[5], // cyan
@@ -283,7 +282,16 @@ export default function StudentInsightExplorer() {
   // --- Color Maps for Charts ---
   const textbookKeys = useMemo(() => {
     if (!textbooksByGradeData || !textbooksByGradeData.length) return [];
-    return Object.keys(textbooksByGradeData[0]).filter((k) => k !== "grade");
+    // CORRECTED: Scan ALL rows to find every unique textbook key
+    const allKeys = new Set<string>();
+    textbooksByGradeData.forEach(row => {
+      Object.keys(row).forEach(key => {
+        if (key !== 'grade') {
+          allKeys.add(key);
+        }
+      });
+    });
+    return Array.from(allKeys);
   }, [textbooksByGradeData]);
 
   const textbookColorMap = useMemo(() => {
