@@ -155,10 +155,10 @@ def get_ml_recommendations(
     try:
         courses, avg_score, sem_list = ml_predict(name)
         recs = []
-        for i, cid in enumerate(courses):
+        for i, cname in enumerate(courses):
             recs.append({
                 "rank": i + 1,
-                "course_id": cid,
+                "course_name": cname,
                 "suggested_term": sem_list[i] if i < len(sem_list) else None
             })
         return {
@@ -173,7 +173,6 @@ def get_ml_recommendations(
 
 @app.post("/ai/summary", tags=["AI"])
 def ai_summary(body: AISummaryRequest):
-    print(os.getenv("OPENAI_API_KEY"))
     try:
         # Convert to a raw dict and pass straight through to the LLM prompt builder
         result = generate_summary(body.model_dump())

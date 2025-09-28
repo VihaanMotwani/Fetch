@@ -171,3 +171,14 @@ def get_students_end_date_from_id(neodriver, student_id: str):
     database_=neodriver._db
     )
     return records[0]["graduation"]
+
+def course_name_from_id(neodriver, course_id: str):
+    records, summary, keys = neodriver._driver.execute_query("""
+    MATCH (c:Course {id: $course_id})
+    RETURN c.name as name
+    """,
+    course_id=course_id,
+    database_=neodriver._db
+    )
+    return records[0]["name"]
+

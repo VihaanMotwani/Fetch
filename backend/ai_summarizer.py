@@ -65,43 +65,42 @@ def _build_prompt(payload: Dict[str, Any]) -> List[Dict[str, str]]:
 
     system = (
         "You are an advisor that explains academic data clearly and briefly. "
-        "Use the provided aggregates and samples to infer patterns. "
+        "Use the provided aggregates and samples to infer other peers patterns. "
         "When uncertain, note limitations. Do not fabricate data."
     )
 
     # Few guardrails + persona + exact JSON schema
     user = f"""
-STUDENT: {student_name}
+    STUDENT: {student_name}
 
-FILTERS:
-- min_similarity: {filters.get('min_similarity')}
-- selected_grades: {filters.get('selected_grades')}
-- course_mode: {filters.get('course_mode')}
-- course_query: {filters.get('course')}
+    FILTERS:
+    - min_similarity: {filters.get('min_similarity')}
+    - course_mode: {filters.get('course_mode')}
+    - course_query: {filters.get('course')}
 
-GRADE_DISTRIBUTION (overall):
-{grade_dist}
+    GRADE_DISTRIBUTION (overall):
+    {grade_dist}
 
-LEARNER_TYPE_DISTRIBUTION:
-{learner_dist}
+    LEARNER_TYPE_DISTRIBUTION:
+    {learner_dist}
 
-PEERS (sample, max 200):
-{[
-    {
-        "id": p.get("id"),
-        "course_id": p.get("course_id"),
-        "grade": p.get("grade"),
-        "similarity": p.get("similarity"),
-        "learner_type": p.get("learner_type"),
-    } for p in peers
-]}
+    PEERS (sample, max 200):
+    {[
+        {
+            "id": p.get("id"),
+            "course_id": p.get("course_id"),
+            "grade": p.get("grade"),
+            "similarity": p.get("similarity"),
+            "learner_type": p.get("learner_type"),
+        } for p in peers
+    ]}
 
-OBJECTIVE:
-1) Provide a concise personalized summary (observation and inference) in Markdown for the student.
-2) Provide 3-6 concrete recommendations tailored to the data (courses to target, study tactics aligned to learner type distribution, when to take a course, etc.).
-3) Provide 2-4 cautions/limitations (data gaps, bias/selection, low sample sizes).
-4) Provide 2-4 next actions the student can take (e.g., explore specific course groups, raise/lower similarity threshold, check required textbooks, meet advisor).
-"""
+    OBJECTIVE:
+    1) Provide a concise personalized summary (observation and inference) of peers of the user in plain text (no md formatting, no special characters like new lines and slash ns) for the student.
+    2) Provide 3-6 concrete recommendations tailored to the data (courses to target, study tactics aligned to learner type distribution, when to take a course, etc.).
+    3) Provide 2-4 cautions/limitations (data gaps, bias/selection, low sample sizes).
+    4) Provide 2-4 next actions the student can take (e.g., explore specific course groups, raise/lower similarity threshold, check required textbooks, meet advisor).
+    """
     return [
         {"role": "system", "content": system},
         {"role": "user", "content": user},
@@ -117,5 +116,6 @@ def generate_summary(payload: Dict[str, Any]):
         temperature=0.4
     )
     content = resp.choices[0].message.content
+    content = content.replace("\n", " ")
 
     return content

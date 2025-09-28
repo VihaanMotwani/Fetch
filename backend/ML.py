@@ -89,7 +89,9 @@ def predict(name: str):
     # Rank courses by peer GPA
     # -----------------------------
     peer_courses = peer_records.assign(
-        course=peer_records["course_path"].str.split()
+        course=peer_records["course_path"].str.split().apply(
+        lambda words: [ " ".join(words[i:i+2]) for i in range(0, len(words), 2) ]
+    )
     ).explode("course")
 
     course_scores = (
@@ -103,6 +105,7 @@ def predict(name: str):
     # -----------------------------
     student_path = find_path_of_alumnus(neo, id)
     student_path = set(c["course_id"] for c in student_path)
+
 
     recommended_courses = course_scores[~course_scores.index.isin(student_path)]
 
@@ -120,6 +123,12 @@ def predict(name: str):
         sem_list = ["Fall2025", "Fall2025", "Fall2025", "Spring2026", "Spring2026", "Spring2026", "Summer2026", "Summer2026", "Summer2026"]
 
 
+    course_ids = recommended_courses.keys().tolist()
+    
+    course_names = []
+    for course_id in course_ids:
+        course_names.append(course_name_from_id(neo, course_id))
+
     neo.close()
 
-    return recommended_courses.keys().tolist(), sum(recommended_courses.tolist())/len(recommended_courses.tolist()), sem_list
+    return course_names, sum(recommended_courses.tolist())/len(recommended_courses.tolist()), sem_list

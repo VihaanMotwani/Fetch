@@ -356,26 +356,35 @@ export default function StudentInsightExplorer() {
   }
 
   // --- AI payload & action ---
-  function buildAISummaryPayload() {
-    return {
-      student_name: studentName?.trim() || null,
-      filters: {
-        min_similarity: minSim,
-        selected_grades: selectedGrades,
-        course_mode: courseMode,
-        course: course?.trim() || null,
-      },
-      // Use what we already computed/rendered on this page:
-      grade_distribution: gradeChartData,            // [{ grade, count }]
-      learner_type_distribution: gradeLearnerDistData, // [{ grade, <learner_type>: count, ... }]
-      peers: peers.map(p => ({
-        id: p.id,
-        grade: p.grade,
-        similarity: p.similarity,
-        textbooks: p.textbooks ?? [],
-      })),
-    };
-  }
+function buildAISummaryPayload() {
+  return {
+    student_name: studentName?.trim() || null,
+    filters: {
+      min_similarity: minSim,
+      selected_grades: selectedGrades,
+      course_mode: courseMode,
+      course: course?.trim() || null,
+    },
+    // ✅ grade distribution already matches [{ grade, count }]
+    grade_distribution: gradeChartData,
+
+    // ✅ transform learnerRows into [{ label, count }]
+    learner_type_distribution: learnerRows
+      ? learnerRows.map(r => ({
+          label: r.learning_style || "Unknown",
+          count: r.students,
+        }))
+      : [],
+
+    // ✅ peers is already good
+    peers: peers.map(p => ({
+      id: p.id,
+      grade: p.grade,
+      similarity: p.similarity,
+      textbooks: p.textbooks ?? [],
+    })),
+  };
+}
 
   async function onGenerateAISummary() {
     setAiError(null);
