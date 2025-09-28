@@ -70,8 +70,8 @@ CALL (row) {
 } IN TRANSACTIONS OF 1000 ROWS;
 
 LOAD CSV WITH HEADERS FROM 'file:///student_degree.csv' AS row
-WITH row.`:START_ID(Student)` AS studentId, row.`:END_ID(Degree)` AS degreeId
 CALL (row) {
+  WITH row.`:START_ID(Student)` AS studentId, row.`:END_ID(Degree)` AS degreeId
   WITH studentId, degreeId
   MATCH (s:Student {id: studentId})
   MATCH (d:Degree  {id: degreeId})

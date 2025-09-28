@@ -19,6 +19,7 @@ import math
 import json
 from collections import defaultdict
 from faker import Faker
+from dateutil.relativedelta import relativedelta
 
 # Initialize Faker with a specific locale for more realistic data
 fake = Faker(['en_US'])
@@ -31,7 +32,7 @@ fake = Faker(['en_US'])
 OUTPUT_DIR = "umbc_data"
 
 # Data Size Configuration
-NUM_STUDENTS = 500        # Reduced number of students for more focused data
+NUM_STUDENTS = 5000        # Reduced number of students for more focused data
 NUM_COURSES = 100         # Reduced number of courses for two departments
 NUM_FACULTY = 30          # Reduced number of faculty for two departments
 NUM_DEGREES = 4           # Two degrees per department (BS and BA)
@@ -221,7 +222,7 @@ def generate_terms():
     Generate academic terms for the past few years and upcoming year.
     """
     terms = []
-    current_year = datetime.datetime.now().year
+    current_year = datetime.datetime.now().year -2
     start_year = current_year - HISTORY_YEARS
     end_year = current_year + 1
     
@@ -258,7 +259,7 @@ def generate_students():
     """
     students = []
     
-    current_year = datetime.datetime.now().year
+    current_year = datetime.datetime.now().year-2
     
     learning_styles = list(LEARNING_STYLE_DISTRIBUTION.keys())
     learning_style_weights = list(LEARNING_STYLE_DISTRIBUTION.values())
@@ -965,7 +966,7 @@ def generate_student_course_history(students, courses, terms, prerequisites):
         prereq_graph[target_id].append(source_id)
     
     # Current term
-    now = datetime.datetime.now()
+    now = datetime.datetime.now()- relativedelta(years=2)
     current_term = get_term_by_date(now)
     
     # Find current term object
