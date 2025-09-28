@@ -12,7 +12,7 @@ import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, Tabl
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Loader2, GraduationCap, Search, Sparkles, TrendingUp } from "lucide-react";
-import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend } from "recharts";
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, Cell } from "recharts";
 
 // --- Types ---
 interface Peer {
@@ -23,10 +23,8 @@ interface Peer {
   textbooks?: string[];
 }
 type LearnerRow = { c_id: string; c_name: string; grade: string; learning_style: string; students: number };
-type AlumniItem = { student_id: string; student_name: string; degree_name: string; graduation_date: string };
-type AlumniResponse = { student_id: string; degree_id: string; degree_name: string; alumni: AlumniItem[] };
 
-// --- Helpers ---
+// --- Color helpers ---
 function gradeColor(grade: string) {
   switch (grade) {
     case "A":
@@ -39,6 +37,22 @@ function gradeColor(grade: string) {
       return "bg-zinc-500";
   }
 }
+const GRADE_FILLS: Record<string, string> = {
+  A: "#10b981", // emerald
+  "A-": "#34d399",
+  "B+": "#38bdf8", // sky
+  B: "#60a5fa", // blue
+  C: "#fbbf24", // amber
+  D: "#f87171", // red
+};
+const gradeFill = (g: string) => GRADE_FILLS[g] ?? "#9ca3af"; // zinc-400 fallback
+
+const STYLE_PALETTE = ["#0ea5e9", "#22c55e", "#a78bfa", "#f97316", "#ef4444", "#14b8a6", "#eab308", "#8b5cf6"];
+const styleFill = (i: number) => STYLE_PALETTE[i % STYLE_PALETTE.length];
+
+const GRADE_ORDER: Record<string, number> = { A: 1, "A-": 2, "B+": 3, B: 4, C: 5, D: 6 };
+
+// --- Bucketing helper ---
 function gradeBucket(grade: string): "A" | "B" | "C" | "D" | null {
   const g = (grade || "").trim().toUpperCase();
   if (g.startsWith("A")) return "A";
@@ -77,13 +91,6 @@ async function fetchLearnerTypes(params: { courseMode: "id" | "name"; course: st
   return await res.json();
 }
 
-async function fetchAlumni(studentName: string): Promise<AlumniResponse> {
-  const qs = new URLSearchParams({ studentName });
-  const res = await fetch(`/api/student/alumni?${qs.toString()}`);
-  if (!res.ok) throw new Error("Failed to fetch alumni");
-  return await res.json();
-}
-
 // --- Component ---
 export default function StudentInsightExplorer() {
   const [studentName, setStudentName] = useState("");
@@ -97,15 +104,13 @@ export default function StudentInsightExplorer() {
 
   const [includeTextbooks, setIncludeTextbooks] = useState(false);
   const [showLearnerTypes, setShowLearnerTypes] = useState(false);
-  const [showAlumni, setShowAlumni] = useState(false);
 
   const [loading, setLoading] = useState(false);
+  const [loadingLearners, setLoadingLearners] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
   const [peers, setPeers] = useState<Peer[]>([]);
   const [learnerRows, setLearnerRows] = useState<LearnerRow[] | null>(null);
-  const [alumniData, setAlumniData] = useState<AlumniResponse | null>(null);
-  const [loadingLearners, setLoadingLearners] = useState(false);
-  const [loadingAlumni, setLoadingAlumni] = useState(false);
 
   const hasTextbooks = useMemo(() => peers.some((p) => (p.textbooks?.length ?? 0) > 0), [peers]);
 
@@ -119,7 +124,9 @@ export default function StudentInsightExplorer() {
       acc[p.grade] = (acc[p.grade] || 0) + 1;
       return acc;
     }, {});
-    return Object.entries(aggregate).map(([grade, count]) => ({ grade, count }));
+    const rows = Object.entries(aggregate).map(([grade, count]) => ({ grade, count }));
+    rows.sort((a, b) => (GRADE_ORDER[a.grade] ?? 999) - (GRADE_ORDER[b.grade] ?? 999));
+    return rows;
   }, [peers]);
 
   const similarityChartData = useMemo(() => {
@@ -155,22 +162,24 @@ export default function StudentInsightExplorer() {
     return rows.slice(0, 10);
   }, [peers]);
 
-  const learnerTypesData = useMemo(() => {
+  // Learner types: X = grade (A/B/C/D), stacks = learner types
+  const learnerTypeKeys = useMemo(() => {
     if (!learnerRows) return [];
-    // pivot into { learning_style, A, B, C, D, total }
-    const map: Record<string, { learning_style: string; A: number; B: number; C: number; D: number; total: number }> =
-      {};
+    const s = new Set<string>();
+    learnerRows.forEach((r) => r.learning_style && s.add(r.learning_style));
+    return Array.from(s);
+  }, [learnerRows]);
+
+  const gradeLearnerDistData = useMemo(() => {
+    if (!learnerRows) return [];
+    const base: Record<string, Record<string, number>> = { A: {}, B: {}, C: {}, D: {} };
     learnerRows.forEach((r) => {
       const bucket = gradeBucket(r.grade);
       if (!bucket) return;
-      const key = r.learning_style || "Unknown";
-      if (!map[key]) map[key] = { learning_style: key, A: 0, B: 0, C: 0, D: 0, total: 0 };
-      map[key][bucket] += r.students;
-      map[key].total += r.students;
+      const lt = r.learning_style || "Unknown";
+      base[bucket][lt] = (base[bucket][lt] || 0) + r.students;
     });
-    const arr = Object.values(map);
-    arr.sort((a, b) => b.A - a.A || b.total - a.total);
-    return arr;
+    return ["A", "B", "C", "D"].map((g) => ({ grade: g, ...base[g] }));
   }, [learnerRows]);
 
   const canSearch =
@@ -180,11 +189,11 @@ export default function StudentInsightExplorer() {
 
   async function onSearch() {
     setLoading(true);
+    setLoadingLearners(false);
     setError(null);
     setLearnerRows(null);
-    setAlumniData(null);
     try {
-      // 1) peers
+      // peers
       const data = await fetchPeers({
         studentName,
         courseMode,
@@ -195,7 +204,7 @@ export default function StudentInsightExplorer() {
       });
       setPeers(data);
 
-      // 2) optional course insights
+      // optional learner types
       if (showLearnerTypes) {
         setLoadingLearners(true);
         try {
@@ -206,17 +215,6 @@ export default function StudentInsightExplorer() {
           setLearnerRows(rows);
         } finally {
           setLoadingLearners(false);
-        }
-      }
-
-      // 3) optional alumni
-      if (showAlumni) {
-        setLoadingAlumni(true);
-        try {
-          const result = await fetchAlumni(studentName);
-          setAlumniData(result);
-        } finally {
-          setLoadingAlumni(false);
         }
       }
     } catch (e: any) {
@@ -337,10 +335,6 @@ export default function StudentInsightExplorer() {
                   />
                   <Label htmlFor="withLearnerTypes">Show course learner types</Label>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Checkbox id="withAlumni" checked={showAlumni} onCheckedChange={(v) => setShowAlumni(Boolean(v))} />
-                  <Label htmlFor="withAlumni">Show alumni (same degree)</Label>
-                </div>
               </div>
             </div>
           </div>
@@ -427,7 +421,7 @@ export default function StudentInsightExplorer() {
 
                 {/* Right: charts/cards stack */}
                 <div className="space-y-4">
-                  {/* Grade distribution — always */}
+                  {/* Grade distribution — distinct colors per grade */}
                   <div className="rounded-2xl border p-3">
                     <h3 className="mb-2 text-sm font-medium text-zinc-700">Grade distribution</h3>
                     <div className="h-56">
@@ -436,7 +430,11 @@ export default function StudentInsightExplorer() {
                           <XAxis dataKey="grade" />
                           <YAxis allowDecimals={false} />
                           <Tooltip />
-                          <Bar dataKey="count" />
+                          <Bar dataKey="count">
+                            {gradeChartData.map((d, i) => (
+                              <Cell key={i} fill={gradeFill(d.grade)} />
+                            ))}
+                          </Bar>
                         </BarChart>
                       </ResponsiveContainer>
                     </div>
@@ -467,10 +465,10 @@ export default function StudentInsightExplorer() {
                             <YAxis allowDecimals={false} />
                             <Tooltip />
                             <Legend />
-                            <Bar dataKey="A" stackId="g" />
-                            <Bar dataKey="B" stackId="g" />
-                            <Bar dataKey="C" stackId="g" />
-                            <Bar dataKey="D" stackId="g" />
+                            <Bar dataKey="A" stackId="g" fill={gradeFill("A")} />
+                            <Bar dataKey="B" stackId="g" fill={gradeFill("B")} />
+                            <Bar dataKey="C" stackId="g" fill={gradeFill("C")} />
+                            <Bar dataKey="D" stackId="g" fill={gradeFill("D")} />
                           </BarChart>
                         </ResponsiveContainer>
                       </div>
@@ -478,66 +476,27 @@ export default function StudentInsightExplorer() {
                     </div>
                   )}
 
-                  {/* Optional: Course learner types */}
+                  {/* Learner types: X = grade; stacks = learner types */}
                   {showLearnerTypes && (
                     <div className="rounded-2xl border p-3">
-                      <h3 className="mb-2 text-sm font-medium text-zinc-700">Learner types × Grade</h3>
+                      <h3 className="mb-2 text-sm font-medium text-zinc-700">Learner types by grade</h3>
                       {loadingLearners ? (
                         <p className="text-xs text-zinc-500">Loading learner types…</p>
-                      ) : learnerTypesData.length === 0 ? (
+                      ) : learnerTypeKeys.length === 0 ? (
                         <p className="text-xs text-zinc-500">No learner-type data.</p>
                       ) : (
                         <div className="h-56">
                           <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={learnerTypesData}>
-                              <XAxis dataKey="learning_style" />
+                            <BarChart data={gradeLearnerDistData}>
+                              <XAxis dataKey="grade" />
                               <YAxis allowDecimals={false} />
                               <Tooltip />
                               <Legend />
-                              <Bar dataKey="A" stackId="g" />
-                              <Bar dataKey="B" stackId="g" />
-                              <Bar dataKey="C" stackId="g" />
-                              <Bar dataKey="D" stackId="g" />
+                              {learnerTypeKeys.map((lt, idx) => (
+                                <Bar key={lt} dataKey={lt} stackId="lt" fill={styleFill(idx)} />
+                              ))}
                             </BarChart>
                           </ResponsiveContainer>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Optional: Alumni */}
-                  {showAlumni && (
-                    <div className="rounded-2xl border p-3">
-                      <h3 className="mb-2 text-sm font-medium text-zinc-700">Alumni from same degree</h3>
-                      {loadingAlumni ? (
-                        <p className="text-xs text-zinc-500">Loading alumni…</p>
-                      ) : !alumniData || alumniData.alumni.length === 0 ? (
-                        <p className="text-xs text-zinc-500">No alumni found.</p>
-                      ) : (
-                        <div className="space-y-2">
-                          <p className="text-xs text-zinc-500">
-                            Degree: <span className="font-medium">{alumniData.degree_name}</span>
-                          </p>
-                          <div className="max-h-56 overflow-auto">
-                            <Table>
-                              <TableHeader>
-                                <TableRow>
-                                  <TableHead>Name</TableHead>
-                                  <TableHead>Student ID</TableHead>
-                                  <TableHead>Graduation</TableHead>
-                                </TableRow>
-                              </TableHeader>
-                              <TableBody>
-                                {alumniData.alumni.map((a) => (
-                                  <TableRow key={a.student_id}>
-                                    <TableCell>{a.student_name}</TableCell>
-                                    <TableCell className="text-xs text-zinc-500">{a.student_id}</TableCell>
-                                    <TableCell>{String(a.graduation_date)}</TableCell>
-                                  </TableRow>
-                                ))}
-                              </TableBody>
-                            </Table>
-                          </div>
                         </div>
                       )}
                     </div>
