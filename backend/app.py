@@ -41,32 +41,14 @@ def get_peers_by_course_id(
     drv = Neo4jDriver()
     try:
         drv.connect()
-        # Use existing helper that queries by course_id
-        # The helper has hard-coded thresholds; we’ll filter post-query to respect minSim/grades if needed.
-        records, filtered = [], []
-        recs = find_successful_peers_id(name=name, course_id=courseId, neodriver=drv)
-
-        accepted = set(_parse_grades(grades))
-        for r in recs:
-            # r should expose .data() or mapping-like fields depending on neo4j version
-            row = dict(r)
-            # Normalize keys based on your Cypher RETURN
-            sim = float(row.get("sim.similarity") or row.get("sim_similarity") or row.get("similarity") or 0.0)
-            grade = row.get("peerGrade.grade") or row.get("grade") or row.get("peer_grade")
-            peer_id = row.get("peer.id") or row.get("id") or row.get("peer_id")
-            peer_name = row.get("peer.name") or row.get("name") or row.get("peer_name")
-
-            if sim >= minSim and (not accepted or (grade in accepted)):
-                filtered.append({
-                    "id": peer_id,
-                    "name": peer_name,
-                    "grade": grade,
-                    "similarity": sim,
-                })
-        # Sort like the UI expects
-        filtered.sort(key=lambda x: x["similarity"], reverse=True)
-        print(filtered)
-        return filtered
+        recs = find_successful_peers_id(
+            name=name,
+            course_id=courseId,
+            neodriver=drv,
+            min_similarity=minSim,
+            grades=_parse_grades(grades),
+        )
+        return [dict(r) for r in recs]
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     finally:
@@ -86,31 +68,14 @@ def get_peers_by_course_name(
     drv = Neo4jDriver()
     try:
         drv.connect()
-        # The helper has hard-coded thresholds; we’ll filter post-query to respect minSim/grades if needed.
-        records, filtered = [], []
-        recs = find_successful_peers_name(name=name, course_name=courseName, neodriver=drv)
-
-        accepted = set(_parse_grades(grades))
-        for r in recs:
-            # r should expose .data() or mapping-like fields depending on neo4j version
-            row = dict(r)
-            # Normalize keys based on your Cypher RETURN
-            sim = float(row.get("sim.similarity") or row.get("sim_similarity") or row.get("similarity") or 0.0)
-            grade = row.get("peerGrade.grade") or row.get("grade") or row.get("peer_grade")
-            peer_id = row.get("peer.id") or row.get("id") or row.get("peer_id")
-            peer_name = row.get("peer.name") or row.get("name") or row.get("peer_name")
-
-            if sim >= minSim and (not accepted or (grade in accepted)):
-                filtered.append({
-                    "id": peer_id,
-                    "name": peer_name,
-                    "grade": grade,
-                    "similarity": sim,
-                })
-        # Sort like the UI expects
-        filtered.sort(key=lambda x: x["similarity"], reverse=True)
-        print(filtered)
-        return filtered
+        recs = find_successful_peers_name(
+            name=name,
+            course_name=courseName,
+            neodriver=drv,
+            min_similarity=minSim,
+            grades=_parse_grades(grades),
+        )
+        return [dict(r) for r in recs]
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     finally:
