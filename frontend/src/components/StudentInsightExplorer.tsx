@@ -87,13 +87,6 @@ const PALETTE = [
   "#0891b2", // teal
 ];
 
-// Minimal mapping: deterministic but short & sweet
-function colorFor(key: string) {
-  let sum = 0;
-  for (let i = 0; i < key.length; i++) sum += key.charCodeAt(i);
-  return PALETTE[sum % PALETTE.length];
-}
-
 function PixelDog() {
   return (
     <div className="pointer-events-none fixed bottom-[-32px] inset-x-0 z-50">
@@ -284,6 +277,29 @@ export default function StudentInsightExplorer() {
     });
     return ["A", "B", "C", "D"].map((g) => ({ grade: g, ...base[g] }));
   }, [learnerRows]);
+
+  // --- Color Maps for Charts (FIXED) ---
+  const textbookKeys = useMemo(() => {
+    if (!textbooksByGradeData || !textbooksByGradeData.length) return [];
+    return Object.keys(textbooksByGradeData[0]).filter((k) => k !== "grade");
+  }, [textbooksByGradeData]);
+
+  const textbookColorMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    textbookKeys.forEach((key, i) => {
+      map[key] = PALETTE[i % PALETTE.length];
+    });
+    return map;
+  }, [textbookKeys]);
+
+  const learnerTypeColorMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    learnerTypeKeys.forEach((key, i) => {
+      map[key] = PALETTE[i % PALETTE.length];
+    });
+    return map;
+  }, [learnerTypeKeys]);
+
 
   const canSearch =
     studentName.trim().length > 0 &&
@@ -662,11 +678,9 @@ export default function StudentInsightExplorer() {
                                 <YAxis allowDecimals={false} width={28} />
                                 <Tooltip />
                                 <Legend />
-                                {Object.keys(textbooksByGradeData[0] || {})
-                                  .filter((k) => k !== "grade")
-                                  .map((k) => (
-                                    <Bar key={k} dataKey={k} stackId="tb" fill={colorFor(k)} />
-                                  ))}
+                                {textbookKeys.map((k) => (
+                                  <Bar key={k} dataKey={k} stackId="tb" fill={textbookColorMap[k]} />
+                                ))}
                               </BarChart>
                             </ResponsiveContainer>
                           </div>
@@ -689,7 +703,7 @@ export default function StudentInsightExplorer() {
                                 <Tooltip />
                                 <Legend />
                                 {learnerTypeKeys.map((k) => (
-                                  <Bar key={k} dataKey={k} stackId="lt" fill={colorFor(k)} />
+                                  <Bar key={k} dataKey={k} stackId="lt" fill={learnerTypeColorMap[k]} />
                                 ))}
                               </BarChart>
                             </ResponsiveContainer>
