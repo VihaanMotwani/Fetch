@@ -86,3 +86,57 @@ def get_peers(
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         drv.close()
+
+@app.get("/course/learner-types")
+def get_learner_types(
+    by: str = Query("id", pattern="^(id|name)$"),
+    course: str = Query(..., description="Course ID (by=id) or Course Name (by=name)"),
+):
+    drv = Neo4jDriver()
+    try:
+        drv.connect()
+        course_id = course
+        if by == "name":
+            course_id = find_course_id_from_name(drv, course_name=course)
+            if not course_id:
+                raise HTTPException(status_code=404, detail=f"Course not found: {course}")
+
+        recs = learner_types_enrolled_in_a_course(drv, course_id=course_id)
+        # Normalize Neo4j records -> dicts
+        out = [dict(r) if isinstance(r, dict) else dict(r) for r in recs]
+        # shape: [{ c_id, c_name, grade, learning_style, students }]
+        return out
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        drv.close()
+
+@app.get("/student/alumni")
+def get_alumni_from_same_degree(studentName: str = Query(...)):
+    drv = Neo4jDriver()
+    try:
+        drv.connect()
+        student_id = find_student_id(drv, student_name=studentName)
+        if not student_id:
+            raise HTTPException(status_code=404, detail=f"Student not found: {studentName}")
+
+        deg = find_student_degree(drv, student_id=student_id)
+        if not deg or not deg.get("degree_id"):
+            raise HTTPException(status_code=404, detail="Degree for student is missing or lacks degree_id")
+
+        alumni = find_alumni_that_finished_from_same_degree(drv, degree_id=deg["degree_id"])
+        # alumni is already a list of dicts per your function
+        return {
+            "student_id": student_id,
+            "degree_id": deg["degree_id"],
+            "degree_name": deg["degree_name"],
+            "alumni": alumni,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        drv.close()

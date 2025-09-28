@@ -9,10 +9,9 @@ import { Slider } from "@/components/ui/slider";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { Loader2, GraduationCap, Search, Users, Sparkles, TrendingUp } from "lucide-react";
+import { Loader2, GraduationCap, Search, Sparkles, TrendingUp } from "lucide-react";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend } from "recharts";
 
 // --- Types ---
@@ -23,6 +22,9 @@ interface Peer {
   similarity: number;
   textbooks?: string[];
 }
+type LearnerRow = { c_id: string; c_name: string; grade: string; learning_style: string; students: number };
+type AlumniItem = { student_id: string; student_name: string; degree_name: string; graduation_date: string };
+type AlumniResponse = { student_id: string; degree_id: string; degree_name: string; alumni: AlumniItem[] };
 
 // --- Helpers ---
 function gradeColor(grade: string) {
@@ -37,22 +39,20 @@ function gradeColor(grade: string) {
       return "bg-zinc-500";
   }
 }
-
 function gradeBucket(grade: string): "A" | "B" | "C" | "D" | null {
   const g = (grade || "").trim().toUpperCase();
   if (g.startsWith("A")) return "A";
   if (g.startsWith("B")) return "B";
   if (g.startsWith("C")) return "C";
-  // collapse D and F into the D bucket; tweak if you want F separate
   if (g.startsWith("D") || g.startsWith("F")) return "D";
   return null;
 }
 
-
+// --- API ---
 async function fetchPeers(params: {
   studentName: string;
   courseMode: "id" | "name";
-  course: string; // courseId or courseName value
+  course: string; // courseId or courseName
   minSim: number;
   grades: string[];
   withTextbooks?: boolean;
@@ -70,6 +70,20 @@ async function fetchPeers(params: {
   return (await res.json()) as Peer[];
 }
 
+async function fetchLearnerTypes(params: { courseMode: "id" | "name"; course: string }): Promise<LearnerRow[]> {
+  const qs = new URLSearchParams({ by: params.courseMode, course: params.course });
+  const res = await fetch(`/api/course/learner-types?${qs.toString()}`);
+  if (!res.ok) throw new Error("Failed to fetch learner types");
+  return await res.json();
+}
+
+async function fetchAlumni(studentName: string): Promise<AlumniResponse> {
+  const qs = new URLSearchParams({ studentName });
+  const res = await fetch(`/api/student/alumni?${qs.toString()}`);
+  if (!res.ok) throw new Error("Failed to fetch alumni");
+  return await res.json();
+}
+
 // --- Component ---
 export default function StudentInsightExplorer() {
   const [studentName, setStudentName] = useState("");
@@ -80,16 +94,20 @@ export default function StudentInsightExplorer() {
   const [gradeA, setGradeA] = useState(true);
   const [gradeAMinus, setGradeAMinus] = useState(true);
   const [gradeBPlus, setGradeBPlus] = useState(true);
+
   const [includeTextbooks, setIncludeTextbooks] = useState(false);
+  const [showLearnerTypes, setShowLearnerTypes] = useState(false);
+  const [showAlumni, setShowAlumni] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [peers, setPeers] = useState<Peer[]>([]);
+  const [learnerRows, setLearnerRows] = useState<LearnerRow[] | null>(null);
+  const [alumniData, setAlumniData] = useState<AlumniResponse | null>(null);
+  const [loadingLearners, setLoadingLearners] = useState(false);
+  const [loadingAlumni, setLoadingAlumni] = useState(false);
 
-  const hasTextbooks = useMemo(
-    () => peers.some((p) => (p.textbooks?.length ?? 0) > 0),
-    [peers]
-  );
+  const hasTextbooks = useMemo(() => peers.some((p) => (p.textbooks?.length ?? 0) > 0), [peers]);
 
   const selectedGrades = useMemo(
     () => [gradeA && "A", gradeAMinus && "A-", gradeBPlus && "B+"].filter(Boolean) as string[],
@@ -104,30 +122,6 @@ export default function StudentInsightExplorer() {
     return Object.entries(aggregate).map(([grade, count]) => ({ grade, count }));
   }, [peers]);
 
-  const textbookGradeDistData = useMemo(() => {
-    // counts[textbook] = { A,B,C,D }
-    const counts: Record<string, { A: number; B: number; C: number; D: number }> = {};
-    peers.forEach((p) => {
-      const bucket = gradeBucket(p.grade);
-      if (!bucket) return;
-      (p.textbooks ?? []).forEach((tb) => {
-        if (!counts[tb]) counts[tb] = { A: 0, B: 0, C: 0, D: 0 };
-        counts[tb][bucket] += 1;
-      });
-    });
-
-    const rows = Object.entries(counts).map(([textbook, buckets]) => ({
-      textbook,
-      ...buckets,
-      total: buckets.A + buckets.B + buckets.C + buckets.D,
-    }));
-
-    // sort by # of A-students, then total usage
-    rows.sort((a, b) => (b.A - a.A) || (b.total - a.total));
-    return rows.slice(0, 10); // top 10 textbooks
-  }, [peers]);
-
-  // New derived charts
   const similarityChartData = useMemo(() => {
     if (peers.length === 0) return [];
     const buckets = Array.from({ length: 10 }, (_, i) => ({
@@ -142,29 +136,55 @@ export default function StudentInsightExplorer() {
     return buckets;
   }, [peers]);
 
-  const topTextbooksData = useMemo(() => {
-    const counts: Record<string, number> = {};
+  const textbookGradeDistData = useMemo(() => {
+    const counts: Record<string, { A: number; B: number; C: number; D: number }> = {};
     peers.forEach((p) => {
+      const bucket = gradeBucket(p.grade);
+      if (!bucket) return;
       (p.textbooks ?? []).forEach((tb) => {
-        counts[tb] = (counts[tb] || 0) + 1;
+        if (!counts[tb]) counts[tb] = { A: 0, B: 0, C: 0, D: 0 };
+        counts[tb][bucket] += 1;
       });
     });
-    return Object.entries(counts)
-      .map(([textbook, count]) => ({ textbook, count }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 10);
+    const rows = Object.entries(counts).map(([textbook, buckets]) => ({
+      textbook,
+      ...buckets,
+      total: buckets.A + buckets.B + buckets.C + buckets.D,
+    }));
+    rows.sort((a, b) => b.A - a.A || b.total - a.total);
+    return rows.slice(0, 10);
   }, [peers]);
+
+  const learnerTypesData = useMemo(() => {
+    if (!learnerRows) return [];
+    // pivot into { learning_style, A, B, C, D, total }
+    const map: Record<string, { learning_style: string; A: number; B: number; C: number; D: number; total: number }> =
+      {};
+    learnerRows.forEach((r) => {
+      const bucket = gradeBucket(r.grade);
+      if (!bucket) return;
+      const key = r.learning_style || "Unknown";
+      if (!map[key]) map[key] = { learning_style: key, A: 0, B: 0, C: 0, D: 0, total: 0 };
+      map[key][bucket] += r.students;
+      map[key].total += r.students;
+    });
+    const arr = Object.values(map);
+    arr.sort((a, b) => b.A - a.A || b.total - a.total);
+    return arr;
+  }, [learnerRows]);
 
   const canSearch =
     studentName.trim().length > 0 &&
     selectedGrades.length > 0 &&
-    ((courseMode === "id" && courseId.trim().length > 0) ||
-      (courseMode === "name" && courseName.trim().length > 0));
+    ((courseMode === "id" && courseId.trim().length > 0) || (courseMode === "name" && courseName.trim().length > 0));
 
   async function onSearch() {
     setLoading(true);
     setError(null);
+    setLearnerRows(null);
+    setAlumniData(null);
     try {
+      // 1) peers
       const data = await fetchPeers({
         studentName,
         courseMode,
@@ -174,6 +194,31 @@ export default function StudentInsightExplorer() {
         withTextbooks: includeTextbooks,
       });
       setPeers(data);
+
+      // 2) optional course insights
+      if (showLearnerTypes) {
+        setLoadingLearners(true);
+        try {
+          const rows = await fetchLearnerTypes({
+            courseMode,
+            course: courseMode === "id" ? courseId : courseName,
+          });
+          setLearnerRows(rows);
+        } finally {
+          setLoadingLearners(false);
+        }
+      }
+
+      // 3) optional alumni
+      if (showAlumni) {
+        setLoadingAlumni(true);
+        try {
+          const result = await fetchAlumni(studentName);
+          setAlumniData(result);
+        } finally {
+          setLoadingAlumni(false);
+        }
+      }
     } catch (e: any) {
       setError(e?.message || "Unknown error");
     } finally {
@@ -201,75 +246,82 @@ export default function StudentInsightExplorer() {
         </div>
       </header>
 
-      <Tabs defaultValue="search" className="space-y-6">
-        <TabsList>
-          <TabsTrigger value="search" className="gap-2">
-            <Search className="h-4 w-4" />
-            Search
-          </TabsTrigger>
-          <TabsTrigger value="insights" className="gap-2">
-            <Users className="h-4 w-4" />
-            Insights
-          </TabsTrigger>
-        </TabsList>
+      {/* Query Builder */}
+      <Card className="rounded-2xl mb-6">
+        <CardHeader>
+          <CardTitle>Query Builder</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <div className="space-y-2">
+              <Label htmlFor="student">Student name</Label>
+              <Input
+                id="student"
+                placeholder="e.g., Bailey Morris"
+                value={studentName}
+                onChange={(e) => setStudentName(e.target.value)}
+              />
+            </div>
 
-        {/* Search Tab */}
-        <TabsContent value="search" className="space-y-6">
-          <Card className="rounded-2xl">
-            <CardHeader>
-              <CardTitle>Query Builder</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-5">
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                <div className="space-y-2">
-                  <Label htmlFor="student">Student name</Label>
-                  <Input
-                    id="student"
-                    placeholder="e.g., Bailey Morris"
-                    value={studentName}
-                    onChange={(e) => setStudentName(e.target.value)}
-                  />
-                </div>
+            <div className="space-y-2">
+              <Label>Course selector</Label>
+              <Select value={courseMode} onValueChange={(v: string) => setCourseMode(v as "id" | "name")}>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="id">By Course ID</SelectItem>
+                  <SelectItem value="name">By Course Name</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
 
-                <div className="space-y-2">
-                  <Label>Course selector</Label>
-                  <Select value={courseMode} onValueChange={(v: string) => setCourseMode(v as "id" | "name")}>
-                    <SelectTrigger className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="id">By Course ID</SelectItem>
-                      <SelectItem value="name">By Course Name</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {courseMode === "id" ? (
-                  <div className="space-y-2">
-                    <Label htmlFor="courseId">Course ID</Label>
-                    <Input
-                      id="courseId"
-                      placeholder="e.g., CSCI-330"
-                      value={courseId}
-                      onChange={(e) => setCourseId(e.target.value)}
-                    />
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    <Label htmlFor="courseName">Course name</Label>
-                    <Input
-                      id="courseName"
-                      placeholder="e.g., Algorithms"
-                      value={courseName}
-                      onChange={(e) => setCourseName(e.target.value)}
-                    />
-                  </div>
-                )}
-              </div>
-
+            {courseMode === "id" ? (
               <div className="space-y-2">
-                <Label>Extras</Label>
-                <div className="flex items-center gap-3 py-1">
+                <Label htmlFor="courseId">Course ID</Label>
+                <Input
+                  id="courseId"
+                  placeholder="e.g., CSCI-330"
+                  value={courseId}
+                  onChange={(e) => setCourseId(e.target.value)}
+                />
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <Label htmlFor="courseName">Course name</Label>
+                <Input
+                  id="courseName"
+                  placeholder="e.g., Algorithms"
+                  value={courseName}
+                  onChange={(e) => setCourseName(e.target.value)}
+                />
+              </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <div className="space-y-3">
+              <Label>Minimum similarity ({Math.round(minSim * 100)}%)</Label>
+              <Slider value={[minSim]} min={0.5} max={0.99} step={0.01} onValueChange={(vals) => setMinSim(vals[0])} />
+              <p className="text-xs text-zinc-500">Adjust the learning-style similarity threshold.</p>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Successful grades</Label>
+              <div className="flex items-center gap-3 py-1">
+                <Checkbox id="gA" checked={gradeA} onCheckedChange={(v) => setGradeA(Boolean(v))} />
+                <Label htmlFor="gA">A</Label>
+                <Checkbox id="gA-" checked={gradeAMinus} onCheckedChange={(v) => setGradeAMinus(Boolean(v))} />
+                <Label htmlFor="gA-">A-</Label>
+                <Checkbox id="gB+" checked={gradeBPlus} onCheckedChange={(v) => setGradeBPlus(Boolean(v))} />
+                <Label htmlFor="gB+">B+</Label>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Extras</Label>
+              <div className="flex flex-wrap items-center gap-4 py-1">
+                <div className="flex items-center gap-2">
                   <Checkbox
                     id="withTextbooks"
                     checked={includeTextbooks}
@@ -277,198 +329,228 @@ export default function StudentInsightExplorer() {
                   />
                   <Label htmlFor="withTextbooks">Include textbooks</Label>
                 </div>
-              </div>
-
-              <Separator />
-
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                <div className="space-y-3">
-                  <Label>Minimum similarity ({Math.round(minSim * 100)}%)</Label>
-                  <Slider value={[minSim]} min={0.5} max={0.99} step={0.01} onValueChange={(vals) => setMinSim(vals[0])} />
-                  <p className="text-xs text-zinc-500">Adjust the learning-style similarity threshold.</p>
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="withLearnerTypes"
+                    checked={showLearnerTypes}
+                    onCheckedChange={(v) => setShowLearnerTypes(Boolean(v))}
+                  />
+                  <Label htmlFor="withLearnerTypes">Show course learner types</Label>
                 </div>
-
-                <div className="space-y-2">
-                  <Label>Successful grades</Label>
-                  <div className="flex items-center gap-3 py-1">
-                    <Checkbox id="gA" checked={gradeA} onCheckedChange={(v) => setGradeA(Boolean(v))} />
-                    <Label htmlFor="gA">A</Label>
-                    <Checkbox id="gA-" checked={gradeAMinus} onCheckedChange={(v) => setGradeAMinus(Boolean(v))} />
-                    <Label htmlFor="gA-">A-</Label>
-                    <Checkbox id="gB+" checked={gradeBPlus} onCheckedChange={(v) => setGradeBPlus(Boolean(v))} />
-                    <Label htmlFor="gB+">B+</Label>
-                  </div>
-                </div>
-
-                <div className="flex items-end justify-start">
-                  <Button onClick={onSearch} disabled={!canSearch || loading} className="gap-2">
-                    {loading ? (
-                      <>
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        Searching
-                      </>
-                    ) : (
-                      <>
-                        <Search className="h-4 w-4" />
-                        Search
-                      </>
-                    )}
-                  </Button>
+                <div className="flex items-center gap-2">
+                  <Checkbox id="withAlumni" checked={showAlumni} onCheckedChange={(v) => setShowAlumni(Boolean(v))} />
+                  <Label htmlFor="withAlumni">Show alumni (same degree)</Label>
                 </div>
               </div>
+            </div>
+          </div>
 
-              {error && <div className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</div>}
-            </CardContent>
-          </Card>
-
-          <Card className="rounded-2xl">
-            <CardHeader>
-              <CardTitle>Results</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {peers.length === 0 ? (
-                <p className="text-sm text-zinc-500">No results yet. Run a search to see peers.</p>
+          <div className="flex items-end justify-start">
+            <Button onClick={onSearch} disabled={!canSearch || loading} className="gap-2">
+              {loading ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Searching
+                </>
               ) : (
-                <div className="space-y-6">
-                  <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-                    <div className="col-span-2">
-                      <Table>
-                        <TableCaption>Similar, successful peers for the selected course</TableCaption>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Peer</TableHead>
-                            <TableHead className="w-32">Grade</TableHead>
-                            <TableHead className="w-40">Similarity</TableHead>
-                            {hasTextbooks && <TableHead className="min-w-[220px]">Textbooks</TableHead>}
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {peers.map((p) => (
-                            <TableRow key={p.id}>
-                              <TableCell>
-                                <div className="flex flex-col">
-                                  <span className="font-medium">{p.name}</span>
-                                  <span className="text-xs text-zinc-500">{p.id}</span>
-                                </div>
-                              </TableCell>
-                              <TableCell>
-                                <span
-                                  className={`inline-flex h-6 items-center rounded-full px-2 text-xs font-medium text-white ${gradeColor(
-                                    p.grade
-                                  )}`}
-                                >
-                                  {p.grade}
-                                </span>
-                              </TableCell>
-                              <TableCell>{(p.similarity * 100).toFixed(1)}%</TableCell>
-                              {hasTextbooks && (
-                                <TableCell className="max-w-[280px]">
-                                  {(p.textbooks ?? []).slice(0, 3).map((tb) => (
-                                    <span key={tb} className="mr-2 mb-1 inline-flex rounded-full bg-zinc-100 px-2 py-0.5 text-xs">
-                                      {tb}
-                                    </span>
-                                  ))}
-                                  {(p.textbooks?.length ?? 0) > 3 && (
-                                    <span className="text-xs text-zinc-500">+{p.textbooks!.length - 3} more</span>
-                                  )}
-                                </TableCell>
-                              )}
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </div>
+                <>
+                  <Search className="h-4 w-4" />
+                  Search
+                </>
+              )}
+            </Button>
+          </div>
 
-                    {/* Charts column */}
-                    <div className="space-y-4">
-                      {/* Grade distribution — always */}
-                      <div className="rounded-2xl border p-3">
-                        <h3 className="mb-2 text-sm font-medium text-zinc-700">Grade distribution</h3>
+          {error && <div className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</div>}
+        </CardContent>
+      </Card>
+
+      {/* Results */}
+      <Card className="rounded-2xl">
+        <CardHeader>
+          <CardTitle>Results</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {peers.length === 0 ? (
+            <p className="text-sm text-zinc-500">No results yet. Run a search to see peers.</p>
+          ) : (
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+                {/* Left: table */}
+                <div className="col-span-2">
+                  <Table>
+                    <TableCaption>Similar, successful peers for the selected course</TableCaption>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Peer</TableHead>
+                        <TableHead className="w-32">Grade</TableHead>
+                        <TableHead className="w-40">Similarity</TableHead>
+                        {hasTextbooks && <TableHead className="min-w-[220px]">Textbooks</TableHead>}
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {peers.map((p) => (
+                        <TableRow key={p.id}>
+                          <TableCell>
+                            <div className="flex flex-col">
+                              <span className="font-medium">{p.name}</span>
+                              <span className="text-xs text-zinc-500">{p.id}</span>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <span
+                              className={`inline-flex h-6 items-center rounded-full px-2 text-xs font-medium text-white ${gradeColor(
+                                p.grade
+                              )}`}
+                            >
+                              {p.grade}
+                            </span>
+                          </TableCell>
+                          <TableCell>{(p.similarity * 100).toFixed(1)}%</TableCell>
+                          {hasTextbooks && (
+                            <TableCell className="max-w-[280px]">
+                              {(p.textbooks ?? []).slice(0, 3).map((tb) => (
+                                <span key={tb} className="mr-2 mb-1 inline-flex rounded-full bg-zinc-100 px-2 py-0.5 text-xs">
+                                  {tb}
+                                </span>
+                              ))}
+                              {(p.textbooks?.length ?? 0) > 3 && (
+                                <span className="text-xs text-zinc-500">+{p.textbooks!.length - 3} more</span>
+                              )}
+                            </TableCell>
+                          )}
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+
+                {/* Right: charts/cards stack */}
+                <div className="space-y-4">
+                  {/* Grade distribution — always */}
+                  <div className="rounded-2xl border p-3">
+                    <h3 className="mb-2 text-sm font-medium text-zinc-700">Grade distribution</h3>
+                    <div className="h-56">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={gradeChartData}>
+                          <XAxis dataKey="grade" />
+                          <YAxis allowDecimals={false} />
+                          <Tooltip />
+                          <Bar dataKey="count" />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+
+                  {/* If textbooks present → stacked by grade; else → similarity histogram */}
+                  {!hasTextbooks ? (
+                    <div className="rounded-2xl border p-3">
+                      <h3 className="mb-2 text-sm font-medium text-zinc-700">Similarity histogram</h3>
+                      <div className="h-56">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={similarityChartData}>
+                            <XAxis dataKey="range" />
+                            <YAxis allowDecimals={false} />
+                            <Tooltip />
+                            <Bar dataKey="count" />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="rounded-2xl border p-3">
+                      <h3 className="mb-2 text-sm font-medium text-zinc-700">Textbooks × Grade</h3>
+                      <div className="h-56">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={textbookGradeDistData}>
+                            <XAxis dataKey="textbook" hide />
+                            <YAxis allowDecimals={false} />
+                            <Tooltip />
+                            <Legend />
+                            <Bar dataKey="A" stackId="g" />
+                            <Bar dataKey="B" stackId="g" />
+                            <Bar dataKey="C" stackId="g" />
+                            <Bar dataKey="D" stackId="g" />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                      <p className="mt-2 text-xs text-zinc-500">Sorted by # of A-students (D includes F).</p>
+                    </div>
+                  )}
+
+                  {/* Optional: Course learner types */}
+                  {showLearnerTypes && (
+                    <div className="rounded-2xl border p-3">
+                      <h3 className="mb-2 text-sm font-medium text-zinc-700">Learner types × Grade</h3>
+                      {loadingLearners ? (
+                        <p className="text-xs text-zinc-500">Loading learner types…</p>
+                      ) : learnerTypesData.length === 0 ? (
+                        <p className="text-xs text-zinc-500">No learner-type data.</p>
+                      ) : (
                         <div className="h-56">
                           <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={gradeChartData}>
-                              <XAxis dataKey="grade" />
+                            <BarChart data={learnerTypesData}>
+                              <XAxis dataKey="learning_style" />
                               <YAxis allowDecimals={false} />
                               <Tooltip />
-                              <Bar dataKey="count" />
+                              <Legend />
+                              <Bar dataKey="A" stackId="g" />
+                              <Bar dataKey="B" stackId="g" />
+                              <Bar dataKey="C" stackId="g" />
+                              <Bar dataKey="D" stackId="g" />
                             </BarChart>
                           </ResponsiveContainer>
                         </div>
-                      </div>
-
-                      {/* If textbooks present → show Top textbooks; else → Similarity histogram */}
-                      {!hasTextbooks ? (
-                        <div className="rounded-2xl border p-3">
-                          <h3 className="mb-2 text-sm font-medium text-zinc-700">Similarity histogram</h3>
-                          <div className="h-56">
-                            <ResponsiveContainer width="100%" height="100%">
-                              <BarChart data={similarityChartData}>
-                                <XAxis dataKey="range" />
-                                <YAxis allowDecimals={false} />
-                                <Tooltip />
-                                <Bar dataKey="count" />
-                              </BarChart>
-                            </ResponsiveContainer>
-                          </div>
-                        </div>
-                      ) : (
-                          <div className="rounded-2xl border p-3">
-                            <h3 className="mb-2 text-sm font-medium text-zinc-700">Textbooks × Grade distribution</h3>
-                            <div className="h-56">
-                              <ResponsiveContainer width="100%" height="100%">
-                                <BarChart data={textbookGradeDistData}>
-                                  {/* textbook names can be long; hide axis labels to avoid overlap */}
-                                  <XAxis dataKey="textbook" hide />
-                                  <YAxis allowDecimals={false} />
-                                  <Tooltip />
-                                  <Legend />
-                                  {/* stacked by grade */}
-                                  <Bar dataKey="A" stackId="g" fill="var(--chart-1)" />
-                                  <Bar dataKey="B" stackId="g" fill="var(--chart-2)" />
-                                  <Bar dataKey="C" stackId="g" fill="var(--chart-3)" />
-                                  <Bar dataKey="D" stackId="g" fill="var(--chart-5)" />
-                                </BarChart>
-                              </ResponsiveContainer>
-                            </div>
-                            <p className="mt-2 text-xs text-zinc-500">
-                              Sorted by # of A-students. (We group F into the D bucket by default.)
-                            </p>
-                          </div>
                       )}
                     </div>
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
+                  )}
 
-        {/* Insights Tab */}
-        <TabsContent value="insights" className="space-y-6">
-          <Card className="rounded-2xl">
-            <CardHeader>
-              <CardTitle>How to use this UI</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3 text-sm text-zinc-700">
-              <p>
-                Enter a <strong>student name</strong>, choose whether you want to select the course by <em>ID</em> or{" "}
-                <em>Name</em>, then set the <strong>minimum similarity</strong> and which <strong>grades</strong> you
-                consider successful.
-              </p>
-              <p>
-                Press <em>Search</em> to query the backend. Results are sorted by similarity descending. The backend
-                supports a single endpoint and resolves course names to IDs:
-              </p>
-              <p className="text-zinc-500">
-                <code>/api/peers?name=&by=id|name&course=&minSim=&grades=&withTextbooks=</code>
-              </p>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+                  {/* Optional: Alumni */}
+                  {showAlumni && (
+                    <div className="rounded-2xl border p-3">
+                      <h3 className="mb-2 text-sm font-medium text-zinc-700">Alumni from same degree</h3>
+                      {loadingAlumni ? (
+                        <p className="text-xs text-zinc-500">Loading alumni…</p>
+                      ) : !alumniData || alumniData.alumni.length === 0 ? (
+                        <p className="text-xs text-zinc-500">No alumni found.</p>
+                      ) : (
+                        <div className="space-y-2">
+                          <p className="text-xs text-zinc-500">
+                            Degree: <span className="font-medium">{alumniData.degree_name}</span>
+                          </p>
+                          <div className="max-h-56 overflow-auto">
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead>Name</TableHead>
+                                  <TableHead>Student ID</TableHead>
+                                  <TableHead>Graduation</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {alumniData.alumni.map((a) => (
+                                  <TableRow key={a.student_id}>
+                                    <TableCell>{a.student_name}</TableCell>
+                                    <TableCell className="text-xs text-zinc-500">{a.student_id}</TableCell>
+                                    <TableCell>{String(a.graduation_date)}</TableCell>
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <footer className="mt-10 text-center text-xs text-zinc-500">
-        Built for rapid iteration. Toggle <code>Include textbooks</code> to enrich results and charts.
+        Toggle extras to enrich results; everything renders together for a uniform view.
       </footer>
     </div>
   );
