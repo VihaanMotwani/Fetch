@@ -133,7 +133,7 @@ LOAD CSV WITH HEADERS FROM 'file:///textbooks.csv' AS row
 CALL (row) {
   WITH row
   CREATE (:Textbook {
-    id: row.id, //this one breaks the constraints TODO!!!!
+    id: row.`id:ID(Textbook)`,
     name: row.name,
     publisher: row.publisher,
     price: row.`price:float`,

@@ -1265,8 +1265,6 @@ def generate_textbooks(courses):
         
         # Generate textbooks for this course
         for i in range(num_textbooks):
-            # Generate unique textbook ID
-            textbook_id = f"TXT-{dept[:3]}-{level}-{i+1}"
             
             # Generate realistic textbook name
             if i == 0:  # Primary textbook
@@ -1293,6 +1291,9 @@ def generate_textbooks(courses):
             # Generate ISBN
             isbn = f"978-{random.randint(0,9)}{random.randint(0,9)}{random.randint(0,9)}-{random.randint(0,9)}{random.randint(0,9)}{random.randint(0,9)}-{random.randint(0,9)}"
             
+            # Generate unique textbook ID
+            textbook_id = f"TXT-{dept[:3]}-{level}-{isbn}-{i+1}"
+
             textbook = {
                 "id": textbook_id,
                 "name": name,
