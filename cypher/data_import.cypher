@@ -52,7 +52,7 @@ CALL (row) {
       WHEN row.teachingStyle STARTS WITH '[' THEN apoc.convert.fromJsonList(row.teachingStyle)
       ELSE CASE WHEN row.teachingStyle IS NULL OR row.teachingStyle = '' THEN [] ELSE split(row.teachingStyle,'|') END
     END,
-    avgRating: row.`avgRating:float`
+    avgRating: toFloat(row.`avgRating:float`)
   })
 } IN TRANSACTIONS OF 1000 ROWS;
 
@@ -64,10 +64,10 @@ CALL (row) {
     id: row.`id:ID(Course)`,
     name: row.name,
     department: row.department,
-    credits: CASE WHEN row.`credits:int` IS NULL OR row.`credits:int` = '' THEN NULL ELSE toInteger(row.credits) END,
-    level:   CASE WHEN row.`level:int`   IS NULL OR row.`level:int`   = '' THEN NULL ELSE toInteger(row.`level:int`)   END,
-    avgDifficulty: CASE WHEN row.`avgDifficulty:float` IS NULL OR row.`avgDifficulty:float` = '' THEN NULL ELSE toInteger(row.`avgDifficulty:float`) END,
-    avgTimeCommitment: CASE WHEN row.`avgTimeCommitment:int` IS NULL OR row.`avgTimeCommitment:int` = '' THEN NULL ELSE toInteger(row.`avgTimeCommitment:int`) END,
+    credits: toInteger(row.`credits:int`),
+    level:   toInteger(row.`level:int`),
+    avgDifficulty: toFloat(row.`avgDifficulty:float`),
+    avgTimeCommitment: toInteger(row.`avgTimeCommitment:int`),
     termAvailability: CASE 
       WHEN row.termAvailability STARTS WITH '[' THEN apoc.convert.fromJsonList(row.termAvailability)
       ELSE CASE WHEN row.termAvailability IS NULL OR row.termAvailability = '' THEN [] ELSE split(row.termAvailability,'|') END
@@ -109,9 +109,9 @@ CALL (row) {
     name: row.name,
     department: row.department,
     type: row.type,
-    totalCreditsRequired: row.`totalCreditsRequired:int`,
-    coreCreditsRequired: row.`coreCreditsRequired:int`,
-    electiveCreditsRequired: row.`electiveCreditsRequired:int`
+    totalCreditsRequired: toInteger(row.`totalCreditsRequired:int`),
+    coreCreditsRequired: toInteger(row.`coreCreditsRequired:int`),
+    electiveCreditsRequired: toInteger(row.`electiveCreditsRequired:int`)
   })
 } IN TRANSACTIONS OF 1000 ROWS;
 
@@ -122,8 +122,8 @@ CALL (row) {
   CREATE (:RequirementGroup {
     id: row.`id:ID(RequirementGroup)`,
     name: row.name,
-    minCredits: row.`minimumCourses:int`,
-    minimumCredits: row.`minimumCredits:int`
+    minCredits: toInteger(row.`minimumCourses:int`),
+    minimumCredits: toInteger(row.`minimumCredits:int`)
   })
 } IN TRANSACTIONS OF 1000 ROWS;
 
@@ -136,10 +136,10 @@ CALL (row) {
     id: row.`id:ID(Textbook)`,
     name: row.name,
     publisher: row.publisher,
-    price: row.`price:float`,
-    page: row.`pages:int`,
-    edition: row.`edition:int`,
-    publicationYear: row.`publicationYear:int`,    
+    price: toFloat(row.`price:float`),
+    page: toInteger(row.`pages:int`),
+    edition: toInteger(row.`edition:int`),
+    publicationYear: toInteger(row.`publicationYear:int`),    
     isbn: row.isbn,
     category: row.category
   })

@@ -36,25 +36,6 @@ CALL (row) {
   CREATE (a)-[:PERFORMANCE_SIMILARITY {sim: similarity}]->(b)
 } IN TRANSACTIONS OF 1000 ROWS;
 
-// Student → Textbook (page viewed) (`page_views.csv`)
-LOAD CSV WITH HEADERS FROM 'file:///page_views.csv' AS row
-CALL (row) {
-  WITH row.`:START_ID(Student)`  AS sid,
-       row.`:END_ID(Textbook)`   AS tid,
-       row.courseId              AS courseId,
-       row.`pageNumber:int`      AS pageNumber,
-       row.timestamp             AS ts,
-       row.`duration:int`        AS duration
-  MATCH (s:Student  {id: sid})
-  MATCH (t:Textbook {id: tid})
-  CREATE (s)-[:VIEWED_PAGE {
-    courseId: courseId,
-    pageNumber: pageNumber,
-    timestamp: ts,
-    duration: duration
-  }]->(t)
-} IN TRANSACTIONS OF 1000 ROWS;
-
 // Student → Textbook (interaction) (`textbook_interactions.csv`)
 LOAD CSV WITH HEADERS FROM 'file:///textbook_interactions.csv' AS row
 CALL (row) {
@@ -62,8 +43,8 @@ CALL (row) {
        row.`:END_ID(Textbook)`  AS tid,
        row.courseId             AS courseId,
        row.interactionType      AS interactionType,
-       row.timestamp                  AS ts,
-       toIntegerOrNull(row.`duration:int`) AS duration
+       row.timestamp                        AS ts,
+       toIntegerOrNull(row.`duration:int`)  AS duration
   MATCH (s:Student  {id: sid})
   MATCH (t:Textbook {id: tid})
   CREATE (s)-[:INTERACTED_WITH {
@@ -71,5 +52,18 @@ CALL (row) {
     interactionType: interactionType,
     timestamp: ts,
     duration: duration
+  }]->(t)
+} IN TRANSACTIONS OF 1000 ROWS;
+
+// Course → Textbook (interaction) (`course_textbooks.csv`)
+LOAD CSV WITH HEADERS FROM 'file:///course_textbooks.csv' AS row
+CALL (row) {
+  WITH row.`:START_ID(Course)` AS cid,
+       row.`:END_ID(Textbook)`  AS tid,
+       row.type                 AS type
+  MATCH (c:Course  {id: cid})
+  MATCH (t:Textbook {id: tid})
+  CREATE (c)-[:ASSIGNED_TO_A_COURSE {
+    type: type
   }]->(t)
 } IN TRANSACTIONS OF 1000 ROWS;
