@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,9 +24,6 @@ interface Peer {
   textbooks?: string[];
 }
 
-// --- Mock toggle ---
-const USE_MOCK = false; // flip to false once your /api endpoints are ready
-
 // --- Helpers ---
 function gradeColor(grade: string) {
   switch (grade) {
@@ -44,7 +41,7 @@ function gradeColor(grade: string) {
 async function fetchPeers(params: {
   studentName: string;
   courseMode: "id" | "name";
-  course: string;      // courseId or courseName value
+  course: string; // courseId or courseName value
   minSim: number;
   grades: string[];
   withTextbooks?: boolean;
@@ -55,7 +52,7 @@ async function fetchPeers(params: {
     course: params.course,
     minSim: String(params.minSim),
     grades: params.grades.join(","),
-    withTextbooks: String(params.withTextbooks ?? false)
+    withTextbooks: String(params.withTextbooks ?? false),
   });
   const res = await fetch(`/api/peers?${query.toString()}`);
   if (!res.ok) throw new Error("Failed to fetch peers");
@@ -72,16 +69,16 @@ export default function StudentInsightExplorer() {
   const [gradeA, setGradeA] = useState(true);
   const [gradeAMinus, setGradeAMinus] = useState(true);
   const [gradeBPlus, setGradeBPlus] = useState(true);
+  const [includeTextbooks, setIncludeTextbooks] = useState(false);
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [peers, setPeers] = useState<Peer[]>([]);
-  // state (with the others)
-  const [includeTextbooks, setIncludeTextbooks] = useState(false);
+
   const hasTextbooks = useMemo(
-    () => peers.some(p => (p.textbooks?.length ?? 0) > 0),
+    () => peers.some((p) => (p.textbooks?.length ?? 0) > 0),
     [peers]
   );
-
 
   const selectedGrades = useMemo(
     () => [gradeA && "A", gradeAMinus && "A-", gradeBPlus && "B+"].filter(Boolean) as string[],
@@ -96,8 +93,39 @@ export default function StudentInsightExplorer() {
     return Object.entries(aggregate).map(([grade, count]) => ({ grade, count }));
   }, [peers]);
 
-  const canSearch = studentName.trim().length > 0 && selectedGrades.length > 0 &&
-    ((courseMode === "id" && courseId.trim().length > 0) || (courseMode === "name" && courseName.trim().length > 0));
+  // New derived charts
+  const similarityChartData = useMemo(() => {
+    if (peers.length === 0) return [];
+    const buckets = Array.from({ length: 10 }, (_, i) => ({
+      range: `${i * 10}-${(i + 1) * 10}%`,
+      count: 0,
+    }));
+    peers.forEach((p) => {
+      const pct = Math.round(p.similarity * 100);
+      const idx = Math.max(0, Math.min(9, Math.floor(pct / 10)));
+      buckets[idx].count += 1;
+    });
+    return buckets;
+  }, [peers]);
+
+  const topTextbooksData = useMemo(() => {
+    const counts: Record<string, number> = {};
+    peers.forEach((p) => {
+      (p.textbooks ?? []).forEach((tb) => {
+        counts[tb] = (counts[tb] || 0) + 1;
+      });
+    });
+    return Object.entries(counts)
+      .map(([textbook, count]) => ({ textbook, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10);
+  }, [peers]);
+
+  const canSearch =
+    studentName.trim().length > 0 &&
+    selectedGrades.length > 0 &&
+    ((courseMode === "id" && courseId.trim().length > 0) ||
+      (courseMode === "name" && courseName.trim().length > 0));
 
   async function onSearch() {
     setLoading(true);
@@ -130,15 +158,25 @@ export default function StudentInsightExplorer() {
           <p className="text-sm text-zinc-600">Find high-performing peers with similar learning styles.</p>
         </div>
         <div className="ml-auto hidden items-center gap-2 md:flex">
-          <Badge variant="secondary" className="gap-1"><Sparkles className="h-3.5 w-3.5"/> Hack-ready</Badge>
-          <Badge variant="outline" className="gap-1"><TrendingUp className="h-3.5 w-3.5"/> Neo4j-powered</Badge>
+          <Badge variant="secondary" className="gap-1">
+            <Sparkles className="h-3.5 w-3.5" /> Hack-ready
+          </Badge>
+          <Badge variant="outline" className="gap-1">
+            <TrendingUp className="h-3.5 w-3.5" /> Neo4j-powered
+          </Badge>
         </div>
       </header>
 
       <Tabs defaultValue="search" className="space-y-6">
         <TabsList>
-          <TabsTrigger value="search" className="gap-2"><Search className="h-4 w-4"/>Search</TabsTrigger>
-          <TabsTrigger value="insights" className="gap-2"><Users className="h-4 w-4"/>Insights</TabsTrigger>
+          <TabsTrigger value="search" className="gap-2">
+            <Search className="h-4 w-4" />
+            Search
+          </TabsTrigger>
+          <TabsTrigger value="insights" className="gap-2">
+            <Users className="h-4 w-4" />
+            Insights
+          </TabsTrigger>
         </TabsList>
 
         {/* Search Tab */}
@@ -151,12 +189,17 @@ export default function StudentInsightExplorer() {
               <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                 <div className="space-y-2">
                   <Label htmlFor="student">Student name</Label>
-                  <Input id="student" placeholder="e.g., Bailey Morris" value={studentName} onChange={(e) => setStudentName(e.target.value)} />
+                  <Input
+                    id="student"
+                    placeholder="e.g., Bailey Morris"
+                    value={studentName}
+                    onChange={(e) => setStudentName(e.target.value)}
+                  />
                 </div>
 
                 <div className="space-y-2">
                   <Label>Course selector</Label>
-                  <Select value={courseMode} onValueChange={(v: any) => setCourseMode(v)}>
+                  <Select value={courseMode} onValueChange={(v: string) => setCourseMode(v as "id" | "name")}>
                     <SelectTrigger className="w-full">
                       <SelectValue />
                     </SelectTrigger>
@@ -170,17 +213,26 @@ export default function StudentInsightExplorer() {
                 {courseMode === "id" ? (
                   <div className="space-y-2">
                     <Label htmlFor="courseId">Course ID</Label>
-                    <Input id="courseId" placeholder="e.g., CSCI-330" value={courseId} onChange={(e) => setCourseId(e.target.value)} />
+                    <Input
+                      id="courseId"
+                      placeholder="e.g., CSCI-330"
+                      value={courseId}
+                      onChange={(e) => setCourseId(e.target.value)}
+                    />
                   </div>
                 ) : (
                   <div className="space-y-2">
                     <Label htmlFor="courseName">Course name</Label>
-                    <Input id="courseName" placeholder="e.g., Algorithms" value={courseName} onChange={(e) => setCourseName(e.target.value)} />
+                    <Input
+                      id="courseName"
+                      placeholder="e.g., Algorithms"
+                      value={courseName}
+                      onChange={(e) => setCourseName(e.target.value)}
+                    />
                   </div>
-
-                  
                 )}
               </div>
+
               <div className="space-y-2">
                 <Label>Extras</Label>
                 <div className="flex items-center gap-3 py-1">
@@ -192,7 +244,6 @@ export default function StudentInsightExplorer() {
                   <Label htmlFor="withTextbooks">Include textbooks</Label>
                 </div>
               </div>
-
 
               <Separator />
 
@@ -217,14 +268,22 @@ export default function StudentInsightExplorer() {
 
                 <div className="flex items-end justify-start">
                   <Button onClick={onSearch} disabled={!canSearch || loading} className="gap-2">
-                    {loading ? (<><Loader2 className="h-4 w-4 animate-spin"/>Searching</>) : (<><Search className="h-4 w-4"/>Search</>)}
+                    {loading ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Searching
+                      </>
+                    ) : (
+                      <>
+                        <Search className="h-4 w-4" />
+                        Search
+                      </>
+                    )}
                   </Button>
                 </div>
               </div>
 
-              {error && (
-                <div className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</div>
-              )}
+              {error && <div className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</div>}
             </CardContent>
           </Card>
 
@@ -259,27 +318,24 @@ export default function StudentInsightExplorer() {
                                 </div>
                               </TableCell>
                               <TableCell>
-                                <span className={`inline-flex h-6 items-center rounded-full px-2 text-xs font-medium text-white ${gradeColor(p.grade)}`}>
+                                <span
+                                  className={`inline-flex h-6 items-center rounded-full px-2 text-xs font-medium text-white ${gradeColor(
+                                    p.grade
+                                  )}`}
+                                >
                                   {p.grade}
                                 </span>
                               </TableCell>
-                              <TableCell>
-                                {(p.similarity * 100).toFixed(1)}%
-                              </TableCell>
+                              <TableCell>{(p.similarity * 100).toFixed(1)}%</TableCell>
                               {hasTextbooks && (
                                 <TableCell className="max-w-[280px]">
-                                  {(p.textbooks ?? []).slice(0, 3).map(tb => (
-                                    <span
-                                      key={tb}
-                                      className="mr-2 mb-1 inline-flex rounded-full bg-zinc-100 px-2 py-0.5 text-xs"
-                                    >
+                                  {(p.textbooks ?? []).slice(0, 3).map((tb) => (
+                                    <span key={tb} className="mr-2 mb-1 inline-flex rounded-full bg-zinc-100 px-2 py-0.5 text-xs">
                                       {tb}
                                     </span>
                                   ))}
                                   {(p.textbooks?.length ?? 0) > 3 && (
-                                    <span className="text-xs text-zinc-500">
-                                      +{(p.textbooks!.length - 3)} more
-                                    </span>
+                                    <span className="text-xs text-zinc-500">+{p.textbooks!.length - 3} more</span>
                                   )}
                                 </TableCell>
                               )}
@@ -289,18 +345,56 @@ export default function StudentInsightExplorer() {
                       </Table>
                     </div>
 
-                    <div className="rounded-2xl border p-3">
-                      <h3 className="mb-2 text-sm font-medium text-zinc-700">Grade distribution</h3>
-                      <div className="h-56">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <BarChart data={gradeChartData}>
-                            <XAxis dataKey="grade" />
-                            <YAxis allowDecimals={false} />
-                            <Tooltip />
-                            <Bar dataKey="count" />
-                          </BarChart>
-                        </ResponsiveContainer>
+                    {/* Charts column */}
+                    <div className="space-y-4">
+                      {/* Grade distribution — always */}
+                      <div className="rounded-2xl border p-3">
+                        <h3 className="mb-2 text-sm font-medium text-zinc-700">Grade distribution</h3>
+                        <div className="h-56">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={gradeChartData}>
+                              <XAxis dataKey="grade" />
+                              <YAxis allowDecimals={false} />
+                              <Tooltip />
+                              <Bar dataKey="count" />
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </div>
                       </div>
+
+                      {/* If textbooks present → show Top textbooks; else → Similarity histogram */}
+                      {!hasTextbooks ? (
+                        <div className="rounded-2xl border p-3">
+                          <h3 className="mb-2 text-sm font-medium text-zinc-700">Similarity histogram</h3>
+                          <div className="h-56">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <BarChart data={similarityChartData}>
+                                <XAxis dataKey="range" />
+                                <YAxis allowDecimals={false} />
+                                <Tooltip />
+                                <Bar dataKey="count" />
+                              </BarChart>
+                            </ResponsiveContainer>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="rounded-2xl border p-3">
+                          <h3 className="mb-2 text-sm font-medium text-zinc-700">Top textbooks</h3>
+                          <div className="h-56">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <BarChart data={topTextbooksData}>
+                                <XAxis dataKey="textbook" hide />
+                                <YAxis allowDecimals={false} />
+                                <Tooltip />
+                                <Bar dataKey="count" />
+                              </BarChart>
+                            </ResponsiveContainer>
+                          </div>
+                          <p className="mt-2 text-xs text-zinc-500">
+                            Showing top {topTextbooksData.length} textbooks across peers.
+                          </p>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -317,21 +411,24 @@ export default function StudentInsightExplorer() {
             </CardHeader>
             <CardContent className="space-y-3 text-sm text-zinc-700">
               <p>
-                Enter a <strong>student name</strong>, choose whether you want to select the course by <em>ID</em> or <em>Name</em>,
-                then set the <strong>minimum similarity</strong> and which <strong>grades</strong> you consider successful.
+                Enter a <strong>student name</strong>, choose whether you want to select the course by <em>ID</em> or{" "}
+                <em>Name</em>, then set the <strong>minimum similarity</strong> and which <strong>grades</strong> you
+                consider successful.
               </p>
               <p>
-                Press <em>Search</em> to query the backend. Results are sorted by similarity descending. You can wire this to Neo4j using
-                your existing Cypher helpers.
+                Press <em>Search</em> to query the backend. Results are sorted by similarity descending. The backend
+                supports a single endpoint and resolves course names to IDs:
               </p>
-              <p className="text-zinc-500">Tip: expose two endpoints—<code>/api/peers?name=&courseId=</code> and <code>/api/peers/by-name?name=&courseName=</code>—that call your two query functions.</p>
+              <p className="text-zinc-500">
+                <code>/api/peers?name=&by=id|name&course=&minSim=&grades=&withTextbooks=</code>
+              </p>
             </CardContent>
           </Card>
         </TabsContent>
       </Tabs>
 
       <footer className="mt-10 text-center text-xs text-zinc-500">
-        Built for rapid iteration. Swap <code>USE_MOCK</code> off when your API is ready.
+        Built for rapid iteration. Toggle <code>Include textbooks</code> to enrich results and charts.
       </footer>
     </div>
   );
