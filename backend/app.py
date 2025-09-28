@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 
 from neo4j_driver import Neo4jDriver
 from query_functions import *
+from ML import predict as ml_predict
 
 load_dotenv()
 
@@ -140,3 +141,30 @@ def get_alumni_from_same_degree(studentName: str = Query(...)):
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         drv.close()
+
+@app.get("/ml/recommendations", tags=["ML"])
+def get_ml_recommendations(
+    name: str = Query(..., description="Student name to base recommendations on"),
+):
+    """Return ML-based course recommendations for a student.
+
+    Calls ML.predict(name) which returns (courses:list[str], avg_score:float, sem_list:list[str]).
+    """
+    try:
+        courses, avg_score, sem_list = ml_predict(name)
+        recs = []
+        for i, cid in enumerate(courses):
+            recs.append({
+                "rank": i + 1,
+                "course_id": cid,
+                "suggested_term": sem_list[i] if i < len(sem_list) else None
+            })
+        return {
+            "student_name": name,
+            "avg_peer_score": avg_score,
+            "recommendations": recs
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
